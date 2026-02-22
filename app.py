@@ -11,7 +11,8 @@ import json
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide")
 
-# --- FIREBASE SETUP (BULUT UYUMLU GUVENLI BAGLANTI) ---
+# --- FIREBASE SETUP (CLOUD-COMPATIBLE SECURE CONNECTION) ---
+# Checks if the app is running on Streamlit Cloud (uses secrets) or locally (uses json file)
 if not firebase_admin._apps:
     if 'firebase' in st.secrets:
         key_dict = json.loads(st.secrets["firebase"]["my_project_settings"])
@@ -23,12 +24,14 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
+# Default map center (North Bay, ON)
 DEFAULT_COORDS = [46.3091, -79.4608]
 
+# Initialize session state to prevent multiple submissions from the same user
 if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
 
-# --- SIDEBAR: GIZLI ADMIN PANELİ ---
+# --- SIDEBAR: HIDDEN ADMIN PANEL ---
 with st.sidebar:
     st.header("🔒 Admin Access")
     st.write("For event staff only.")
@@ -37,12 +40,14 @@ with st.sidebar:
     if admin_pass == "NorthBay2026":
         st.success("Unlocked!")
         
+        # Fetch all data from Firestore
         attendees_ref = db.collection('attendees')
         docs = attendees_ref.stream()
         data_list = []
         for doc in docs:
             data_list.append(doc.to_dict())
         
+        # Display download button if data exists
         if data_list:
             df = pd.DataFrame(data_list)
             df = df[['full_code', 'fsa', 'city', 'lat', 'lon']] 
@@ -57,6 +62,7 @@ with st.sidebar:
             
             st.divider() 
             
+            # Wipe data functionality for resetting the map
             if st.button("🗑️ Wipe All Data (Reset Map)"):
                 docs_to_delete = db.collection('attendees').stream()
                 for doc in docs_to_delete:
@@ -85,10 +91,10 @@ if not st.session_state.has_submitted:
             fsa_code = clean_code[:3]
             nomi = pgeocode.Nominatim('ca')
             
-            # 1. ADIM: Önce tam 6 haneli kodu dene (Yüksek hassasiyet)
+            # STEP 1: Smart Lookup - Try the full 6-digit code first for high precision (Crucial for rural P0H codes)
             location_data = nomi.query_postal_code(clean_code)
             
-            # 2. ADIM: Eğer 6 haneli kod kütüphanede yoksa, ilk 3 haneyi (FSA) dene
+            # STEP 2: Fallback - If the full 6-digit code is not found, try the first 3 digits (FSA)
             if str(location_data.latitude) == 'nan':
                 location_data = nomi.query_postal_code(fsa_code)
             
@@ -97,6 +103,7 @@ if not st.session_state.has_submitted:
                 lon = float(location_data.longitude)
                 city_name = str(location_data.place_name)
                 
+                # Save the validated data to Firestore
                 db.collection('attendees').document().set({
                     "lat": lat, "lon": lon, "city": city_name,
                     "fsa": fsa_code, "full_code": clean_code 
@@ -109,15 +116,17 @@ if not st.session_state.has_submitted:
         else:
             st.error("Please enter a valid postal code (at least 3 characters).")
 else:
+    # Success message after submission
     st.success("🎉 Thank you! Your location has been added to the map.")
     st.info("Look at the screen to see your dot appear!")
 
 # --- MAP RENDERING ---
 m = folium.Map(location=DEFAULT_COORDS, zoom_start=7)
 
-# GÜNCELLEME: Kümeleme yarıçapını daralttık (maxClusterRadius=35)
+# Smart Clustering: Radius reduced to 35 to prevent distant cities from merging
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
+# Retrieve and plot all attendee markers
 attendees_ref = db.collection('attendees')
 docs = attendees_ref.stream()
 
