@@ -1,0 +1,6 @@
+streamlit
+folium
+streamlit-folium
+pgeocode
+firebase-admin
+pandas
