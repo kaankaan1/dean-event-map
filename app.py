@@ -12,7 +12,6 @@ import json
 st.set_page_config(page_title="Live Attendee Map", layout="wide")
 
 # --- FIREBASE SETUP (CLOUD-COMPATIBLE SECURE CONNECTION) ---
-# Checks if the app is running on Streamlit Cloud (uses secrets) or locally (uses json file)
 if not firebase_admin._apps:
     if 'firebase' in st.secrets:
         key_dict = json.loads(st.secrets["firebase"]["my_project_settings"])
@@ -27,9 +26,16 @@ db = firestore.client()
 # Default map center (North Bay, ON)
 DEFAULT_COORDS = [46.3091, -79.4608]
 
-# Initialize session state to prevent multiple submissions from the same user
 if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
+
+# --- KIRSAL KODLAR ICIN VIP LISTE (OVERRIDE LIST) ---
+# Kutuphanenin bulamadigi veya yanlis yere attigi ozel kasabalarin tam koordinatlari
+CUSTOM_LOCATIONS = {
+    "P0H1V0": {"lat": 46.3184, "lon": -78.7011, "city": "Mattawa"},
+    "P0H1H0": {"lat": 46.2167, "lon": -79.3667, "city": "Callander"},
+    "P0H2H0": {"lat": 47.0608, "lon": -79.7936, "city": "Temagami"}
+}
 
 # --- SIDEBAR: HIDDEN ADMIN PANEL ---
 with st.sidebar:
@@ -40,14 +46,12 @@ with st.sidebar:
     if admin_pass == "NorthBay2026":
         st.success("Unlocked!")
         
-        # Fetch all data from Firestore
         attendees_ref = db.collection('attendees')
         docs = attendees_ref.stream()
         data_list = []
         for doc in docs:
             data_list.append(doc.to_dict())
         
-        # Display download button if data exists
         if data_list:
             df = pd.DataFrame(data_list)
             df = df[['full_code', 'fsa', 'city', 'lat', 'lon']] 
@@ -62,7 +66,6 @@ with st.sidebar:
             
             st.divider() 
             
-            # Wipe data functionality for resetting the map
             if st.button("🗑️ Wipe All Data (Reset Map)"):
                 docs_to_delete = db.collection('attendees').stream()
                 for doc in docs_to_delete:
@@ -89,21 +92,13 @@ if not st.session_state.has_submitted:
         clean_code = postal_code_input.replace(" ", "").upper()
         if len(clean_code) >= 3:
             fsa_code = clean_code[:3]
-            nomi = pgeocode.Nominatim('ca')
             
-            # STEP 1: Smart Lookup - Try the full 6-digit code first for high precision (Crucial for rural P0H codes)
-            location_data = nomi.query_postal_code(clean_code)
-            
-            # STEP 2: Fallback - If the full 6-digit code is not found, try the first 3 digits (FSA)
-            if str(location_data.latitude) == 'nan':
-                location_data = nomi.query_postal_code(fsa_code)
-            
-            if str(location_data.latitude) != 'nan':
-                lat = float(location_data.latitude)
-                lon = float(location_data.longitude)
-                city_name = str(location_data.place_name)
+            # --- ADIM 1: ONCE BIZIM VIP LISTEYI KONTROL ET ---
+            if clean_code in CUSTOM_LOCATIONS:
+                lat = CUSTOM_LOCATIONS[clean_code]["lat"]
+                lon = CUSTOM_LOCATIONS[clean_code]["lon"]
+                city_name = CUSTOM_LOCATIONS[clean_code]["city"]
                 
-                # Save the validated data to Firestore
                 db.collection('attendees').document().set({
                     "lat": lat, "lon": lon, "city": city_name,
                     "fsa": fsa_code, "full_code": clean_code 
@@ -111,28 +106,45 @@ if not st.session_state.has_submitted:
                 
                 st.session_state.has_submitted = True
                 st.rerun() 
+            
+            # --- ADIM 2: EGER VIP LISTEDE YOKSA NORMAL KUTUPHANEYE SOR ---
             else:
-                st.error("Postal code not found. Please check and try again.")
+                nomi = pgeocode.Nominatim('ca')
+                location_data = nomi.query_postal_code(clean_code)
+                
+                if str(location_data.latitude) == 'nan':
+                    location_data = nomi.query_postal_code(fsa_code)
+                
+                if str(location_data.latitude) != 'nan':
+                    lat = float(location_data.latitude)
+                    lon = float(location_data.longitude)
+                    city_name = str(location_data.place_name)
+                    
+                    db.collection('attendees').document().set({
+                        "lat": lat, "lon": lon, "city": city_name,
+                        "fsa": fsa_code, "full_code": clean_code 
+                    })
+                    
+                    st.session_state.has_submitted = True
+                    st.rerun() 
+                else:
+                    st.error("Postal code not found. Please check and try again.")
         else:
             st.error("Please enter a valid postal code (at least 3 characters).")
 else:
-    # Success message after submission
     st.success("🎉 Thank you! Your location has been added to the map.")
     st.info("Look at the screen to see your dot appear!")
 
 # --- MAP RENDERING ---
 m = folium.Map(location=DEFAULT_COORDS, zoom_start=7)
 
-# Smart Clustering: Radius reduced to 35 to prevent distant cities from merging
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
-# Retrieve and plot all attendee markers
 attendees_ref = db.collection('attendees')
 docs = attendees_ref.stream()
 
 for doc in docs:
     data = doc.to_dict()
-    # FIX: Reverted to standard Marker but using a built-in FontAwesome icon to prevent broken images and frontend crashes
     folium.Marker(
         location=[data["lat"], data["lon"]],
         popup=data["city"],
