@@ -2,16 +2,16 @@ import streamlit as st
 import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
-import pgeocode
 import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
 import json
+import requests # GUNCELLEME: Google ile iletisim kurmak icin eklendi
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide")
 
-# --- FIREBASE SETUP (CLOUD-COMPATIBLE SECURE CONNECTION) ---
+# --- FIREBASE SETUP ---
 if not firebase_admin._apps:
     if 'firebase' in st.secrets:
         key_dict = json.loads(st.secrets["firebase"]["my_project_settings"])
@@ -28,14 +28,6 @@ DEFAULT_COORDS = [46.3091, -79.4608]
 
 if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
-
-# --- KIRSAL KODLAR ICIN VIP LISTE (OVERRIDE LIST) ---
-# Kutuphanenin bulamadigi veya yanlis yere attigi ozel kasabalarin tam koordinatlari
-CUSTOM_LOCATIONS = {
-    "P0H1V0": {"lat": 46.3184, "lon": -78.7011, "city": "Mattawa"},
-    "P0H1H0": {"lat": 46.2167, "lon": -79.3667, "city": "Callander"},
-    "P0H2H0": {"lat": 47.0608, "lon": -79.7936, "city": "Temagami"}
-}
 
 # --- SIDEBAR: HIDDEN ADMIN PANEL ---
 with st.sidebar:
@@ -93,33 +85,28 @@ if not st.session_state.has_submitted:
         if len(clean_code) >= 3:
             fsa_code = clean_code[:3]
             
-            # --- ADIM 1: ONCE BIZIM VIP LISTEYI KONTROL ET ---
-            if clean_code in CUSTOM_LOCATIONS:
-                lat = CUSTOM_LOCATIONS[clean_code]["lat"]
-                lon = CUSTOM_LOCATIONS[clean_code]["lon"]
-                city_name = CUSTOM_LOCATIONS[clean_code]["city"]
-                
-                db.collection('attendees').document().set({
-                    "lat": lat, "lon": lon, "city": city_name,
-                    "fsa": fsa_code, "full_code": clean_code 
-                })
-                
-                st.session_state.has_submitted = True
-                st.rerun() 
+            # --- GOOGLE MAPS API ENTEGRASYONU ---
+            api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
+            url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_code},+Canada&key={api_key}"
             
-            # --- ADIM 2: EGER VIP LISTEDE YOKSA NORMAL KUTUPHANEYE SOR ---
-            else:
-                nomi = pgeocode.Nominatim('ca')
-                location_data = nomi.query_postal_code(clean_code)
+            try:
+                response = requests.get(url).json()
                 
-                if str(location_data.latitude) == 'nan':
-                    location_data = nomi.query_postal_code(fsa_code)
-                
-                if str(location_data.latitude) != 'nan':
-                    lat = float(location_data.latitude)
-                    lon = float(location_data.longitude)
-                    city_name = str(location_data.place_name)
+                if response['status'] == 'OK':
+                    # Google'dan gelen enlem ve boylami al
+                    location = response['results'][0]['geometry']['location']
+                    lat = location['lat']
+                    lon = location['lng']
                     
+                    # Google'dan gelen sehir adini al
+                    city_name = clean_code 
+                    address_components = response['results'][0]['address_components']
+                    for comp in address_components:
+                        if "locality" in comp["types"] or "postal_town" in comp["types"]:
+                            city_name = comp["long_name"]
+                            break
+                    
+                    # Veritabanina kaydet
                     db.collection('attendees').document().set({
                         "lat": lat, "lon": lon, "city": city_name,
                         "fsa": fsa_code, "full_code": clean_code 
@@ -129,6 +116,9 @@ if not st.session_state.has_submitted:
                     st.rerun() 
                 else:
                     st.error("Postal code not found. Please check and try again.")
+            except Exception as e:
+                st.error("There was an error connecting to the mapping service. Please try again.")
+                
         else:
             st.error("Please enter a valid postal code (at least 3 characters).")
 else:
