@@ -6,7 +6,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import pandas as pd
 import json
-import requests # GUNCELLEME: Google ile iletisim kurmak icin eklendi
+import requests
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide")
@@ -86,10 +86,10 @@ if not st.session_state.has_submitted:
             fsa_code = clean_code[:3]
             
             # --- GOOGLE MAPS API ENTEGRASYONU ---
-            api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
-            url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_code},+Canada&key={api_key}"
-            
             try:
+                api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
+                url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_code},+Canada&key={api_key}"
+                
                 response = requests.get(url).json()
                 
                 if response['status'] == 'OK':
@@ -115,9 +115,12 @@ if not st.session_state.has_submitted:
                     st.session_state.has_submitted = True
                     st.rerun() 
                 else:
-                    st.error("Postal code not found. Please check and try again.")
+                    # BURASI GUNCELLEDI: Hata detayi gosterilecek
+                    error_msg = response.get('error_message', 'No details provided by Google.')
+                    st.error(f"Google API Error: {response['status']} - {error_msg}")
+                    
             except Exception as e:
-                st.error("There was an error connecting to the mapping service. Please try again.")
+                st.error(f"There was an error connecting to the mapping service: {e}")
                 
         else:
             st.error("Please enter a valid postal code (at least 3 characters).")
