@@ -11,6 +11,16 @@ import requests
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide")
 
+# --- CSS HACKS: HIDE STREAMLIT BRANDING ---
+hide_streamlit_style = """
+            <style>
+            #MainMenu {visibility: hidden;} /* Sag ustteki hamburger menuyu gizler */
+            footer {visibility: hidden;}    /* Sag alttaki 'Hosted with Streamlit' yazisini gizler */
+            header {visibility: hidden;}    /* Ustteki boslugu ve header'i gizler */
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # --- FIREBASE SETUP ---
 if not firebase_admin._apps:
     if 'firebase' in st.secrets:
@@ -68,13 +78,14 @@ with st.sidebar:
             st.info("No attendees data yet.")
 
 # --- MAIN PAGE UI ---
-st.title("📍 Live Event Map")
+# METINLER DEAN'IN ISTEDIGI GIBI GUNCELLEDI
+st.title("📍 What area are you coming in from?")
 
 if not st.session_state.has_submitted:
-    st.markdown("Welcome! Please enter your postal code to see your region on the map.")
+    st.markdown("Enter your postal code and see how far our outdoor community reaches:")
     col1, col2 = st.columns([3, 1])
     with col1:
-        postal_code_input = st.text_input("Enter Canadian Postal Code (e.g., P1B 8G6):", max_chars=7)
+        postal_code_input = st.text_input("Canadian Postal Code (e.g., P1B 8G6):", max_chars=7)
     with col2:
         st.write("") 
         st.write("") 
@@ -115,7 +126,6 @@ if not st.session_state.has_submitted:
                     st.session_state.has_submitted = True
                     st.rerun() 
                 else:
-                    # BURASI GUNCELLEDI: Hata detayi gosterilecek
                     error_msg = response.get('error_message', 'No details provided by Google.')
                     st.error(f"Google API Error: {response['status']} - {error_msg}")
                     
