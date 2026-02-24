@@ -14,9 +14,9 @@ st.set_page_config(page_title="Live Attendee Map", layout="wide")
 # --- CSS HACKS: HIDE STREAMLIT BRANDING ---
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} /* Sag ustteki hamburger menuyu gizler */
-            footer {visibility: hidden;}    /* Sag alttaki 'Hosted with Streamlit' yazisini gizler */
-            header {visibility: hidden;}    /* Ustteki boslugu ve header'i gizler */
+            #MainMenu {visibility: hidden;} /* Hides the top-right hamburger menu */
+            footer {visibility: hidden;}    /* Hides the 'Hosted with Streamlit' footer */
+            header {visibility: hidden;}    /* Hides the top header padding */
             </style>
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -78,7 +78,6 @@ with st.sidebar:
             st.info("No attendees data yet.")
 
 # --- MAIN PAGE UI ---
-# METINLER DEAN'IN ISTEDIGI GIBI GUNCELLEDI
 st.title("📍 What area are you coming in from?")
 
 if not st.session_state.has_submitted:
@@ -96,7 +95,7 @@ if not st.session_state.has_submitted:
         if len(clean_code) >= 3:
             fsa_code = clean_code[:3]
             
-            # --- GOOGLE MAPS API ENTEGRASYONU ---
+            # --- GOOGLE MAPS API INTEGRATION ---
             try:
                 api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
                 url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_code},+Canada&key={api_key}"
@@ -104,12 +103,12 @@ if not st.session_state.has_submitted:
                 response = requests.get(url).json()
                 
                 if response['status'] == 'OK':
-                    # Google'dan gelen enlem ve boylami al
+                    # Extract latitude and longitude from Google response
                     location = response['results'][0]['geometry']['location']
                     lat = location['lat']
                     lon = location['lng']
                     
-                    # Google'dan gelen sehir adini al
+                    # Extract city name from Google response
                     city_name = clean_code 
                     address_components = response['results'][0]['address_components']
                     for comp in address_components:
@@ -117,7 +116,7 @@ if not st.session_state.has_submitted:
                             city_name = comp["long_name"]
                             break
                     
-                    # Veritabanina kaydet
+                    # Save attendee location to Firestore
                     db.collection('attendees').document().set({
                         "lat": lat, "lon": lon, "city": city_name,
                         "fsa": fsa_code, "full_code": clean_code 
