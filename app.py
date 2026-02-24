@@ -14,9 +14,9 @@ st.set_page_config(page_title="Live Attendee Map", layout="wide")
 # --- CSS HACKS: HIDE STREAMLIT BRANDING ---
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} /* Hides the top-right hamburger menu */
-            footer {visibility: hidden;}    /* Hides the 'Hosted with Streamlit' footer */
-            header {visibility: hidden;}    /* Hides the top header padding */
+            #MainMenu {visibility: hidden;} 
+            footer {visibility: hidden;}    
+            header {visibility: hidden;}    
             </style>
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -42,104 +42,121 @@ if 'has_submitted' not in st.session_state:
 # --- SIDEBAR: HIDDEN ADMIN PANEL ---
 with st.sidebar:
     st.header("🔒 Admin Access")
-    st.write("For event staff only.")
     admin_pass = st.text_input("Enter Password:", type="password")
     
     if admin_pass == "NorthBay2026":
         st.success("Unlocked!")
         
+        # --- NEW: EXHIBITOR INPUT (RED PIN) ---
+        st.divider()
+        st.subheader("🏢 Add Exhibitor (Red Pin)")
+        ex_code = st.text_input("Vendor Postal Code:", max_chars=7, key="ex_code")
+        if st.button("Drop Exhibitor Pin"):
+            clean_ex = ex_code.replace(" ", "").upper()
+            if len(clean_ex) >= 3:
+                try:
+                    api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
+                    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_ex},+Canada&key={api_key}"
+                    response = requests.get(url).json()
+                    if response['status'] == 'OK':
+                        loc = response['results'][0]['geometry']['location']
+                        city_n = clean_ex
+                        for comp in response['results'][0]['address_components']:
+                            if "locality" in comp["types"] or "postal_town" in comp["types"]:
+                                city_n = comp["long_name"]
+                                break
+                        db.collection('attendees').document().set({
+                            "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
+                            "fsa": clean_ex[:3], "full_code": clean_ex,
+                            "type": "exhibitor" # Marks this as a red pin
+                        })
+                        st.success(f"Exhibitor added at {city_n}!")
+                        st.rerun()
+                    else:
+                        st.error("Google API Error. Check code.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            else:
+                st.warning("Enter valid code.")
+
+        # --- DATA EXPORT & WIPE ---
+        st.divider()
         attendees_ref = db.collection('attendees')
         docs = attendees_ref.stream()
-        data_list = []
-        for doc in docs:
-            data_list.append(doc.to_dict())
+        data_list = [doc.to_dict() for doc in docs]
         
         if data_list:
             df = pd.DataFrame(data_list)
-            df = df[['full_code', 'fsa', 'city', 'lat', 'lon']] 
+            # Only export relevant columns
+            df = df[['full_code', 'fsa', 'city', 'lat', 'lon', 'type']] if 'type' in df.columns else df
             csv = df.to_csv(index=False).encode('utf-8')
             
-            st.download_button(
-                label="📥 Download Analytics (CSV)",
-                data=csv,
-                file_name='event_attendees.csv',
-                mime='text/csv',
-            )
+            st.download_button("📥 Download Data (CSV)", data=csv, file_name='event_data.csv', mime='text/csv')
             
             st.divider() 
-            
-            if st.button("🗑️ Wipe All Data (Reset Map)"):
-                docs_to_delete = db.collection('attendees').stream()
-                for doc in docs_to_delete:
+            if st.button("🗑️ Wipe All Data"):
+                for doc in db.collection('attendees').stream():
                     doc.reference.delete()
-                st.warning("All data has been deleted. Refreshing...")
                 st.rerun()
         else:
-            st.info("No attendees data yet.")
+            st.info("No data yet.")
 
 # --- MAIN PAGE UI ---
-st.title("📍 What area are you coming in from?")
+
+# Center the Logo
+col_l, col_m, col_r = st.columns([1, 2, 1])
+with col_m:
+    try:
+        st.image("logo.png", use_container_width=True)
+    except:
+        pass # Silently pass if logo.png is not uploaded yet
+
+st.markdown("<h1 style='text-align: center;'>📍 What area are you coming in from?</h1>", unsafe_allow_html=True)
 
 if not st.session_state.has_submitted:
-    st.markdown("Enter your postal code and see how far our outdoor community reaches:")
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        postal_code_input = st.text_input("Canadian Postal Code (e.g., P1B 8G6):", max_chars=7)
+    st.markdown("<p style='text-align: center;'>Enter your postal code and see how far our outdoor community reaches:</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.write("") 
-        st.write("") 
+        postal_code_input = st.text_input("Canadian Postal Code (e.g., P1B 8G6):", max_chars=7)
+        st.write("")
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
         clean_code = postal_code_input.replace(" ", "").upper()
         if len(clean_code) >= 3:
             fsa_code = clean_code[:3]
-            
-            # --- GOOGLE MAPS API INTEGRATION ---
             try:
                 api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
                 url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_code},+Canada&key={api_key}"
-                
                 response = requests.get(url).json()
                 
                 if response['status'] == 'OK':
-                    # Extract latitude and longitude from Google response
                     location = response['results'][0]['geometry']['location']
-                    lat = location['lat']
-                    lon = location['lng']
-                    
-                    # Extract city name from Google response
                     city_name = clean_code 
-                    address_components = response['results'][0]['address_components']
-                    for comp in address_components:
+                    for comp in response['results'][0]['address_components']:
                         if "locality" in comp["types"] or "postal_town" in comp["types"]:
                             city_name = comp["long_name"]
                             break
                     
-                    # Save attendee location to Firestore
                     db.collection('attendees').document().set({
-                        "lat": lat, "lon": lon, "city": city_name,
-                        "fsa": fsa_code, "full_code": clean_code 
+                        "lat": location['lat'], "lon": location['lng'], "city": city_name,
+                        "fsa": fsa_code, "full_code": clean_code,
+                        "type": "attendee" # Standard blue pin
                     })
-                    
                     st.session_state.has_submitted = True
                     st.rerun() 
                 else:
-                    error_msg = response.get('error_message', 'No details provided by Google.')
-                    st.error(f"Google API Error: {response['status']} - {error_msg}")
-                    
+                    st.error("Postal code not found. Please try again.")
             except Exception as e:
-                st.error(f"There was an error connecting to the mapping service: {e}")
-                
+                st.error("Service error.")
         else:
-            st.error("Please enter a valid postal code (at least 3 characters).")
+            st.error("Please enter a valid code.")
 else:
     st.success("🎉 Thank you! Your location has been added to the map.")
-    st.info("Look at the screen to see your dot appear!")
 
 # --- MAP RENDERING ---
 m = folium.Map(location=DEFAULT_COORDS, zoom_start=7)
-
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
 attendees_ref = db.collection('attendees')
@@ -147,11 +164,18 @@ docs = attendees_ref.stream()
 
 for doc in docs:
     data = doc.to_dict()
+    is_ex = data.get("type") == "exhibitor"
+    
+    # Assign Red Star for Exhibitors, Blue Pin for Attendees
+    p_color = "red" if is_ex else "blue"
+    p_icon = "star" if is_ex else "map-pin"
+    p_text = f"⭐ Exhibitor ({data.get('city', '')})" if is_ex else data.get("city", "")
+    
     folium.Marker(
         location=[data["lat"], data["lon"]],
-        popup=data["city"],
-        tooltip="Attendee",
-        icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
+        popup=p_text,
+        tooltip="Exhibitor" if is_ex else "Attendee",
+        icon=folium.Icon(color=p_color, icon=p_icon, prefix="fa")
     ).add_to(marker_cluster)
 
 st_folium(m, width=1000, height=600)
