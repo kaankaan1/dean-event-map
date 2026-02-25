@@ -11,12 +11,11 @@ import requests
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide")
 
-# --- CSS HACKS: HIDE STREAMLIT BRANDING ---
+# --- CSS HACKS: HIDE STREAMLIT BRANDING (FIXED ARROW) ---
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} 
-            footer {visibility: hidden;}    
-            header {visibility: hidden;}    
+            #MainMenu {visibility: hidden;} /* Sadece sag ustteki menuyu gizler */
+            footer {visibility: hidden;}    /* Sadece alttaki Streamlit yazisini gizler */
             </style>
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -33,7 +32,6 @@ if not firebase_admin._apps:
 
 db = firestore.client()
 
-# Default map center (North Bay, ON)
 DEFAULT_COORDS = [46.3091, -79.4608]
 
 if 'has_submitted' not in st.session_state:
@@ -47,7 +45,7 @@ with st.sidebar:
     if admin_pass == "NorthBay2026":
         st.success("Unlocked!")
         
-        # --- NEW: EXHIBITOR INPUT (RED PIN) ---
+        # --- EXHIBITOR INPUT ---
         st.divider()
         st.subheader("🏢 Add Exhibitor (Red Pin)")
         ex_code = st.text_input("Vendor Postal Code:", max_chars=7, key="ex_code")
@@ -68,7 +66,7 @@ with st.sidebar:
                         db.collection('attendees').document().set({
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
                             "fsa": clean_ex[:3], "full_code": clean_ex,
-                            "type": "exhibitor" # Marks this as a red pin
+                            "type": "exhibitor" 
                         })
                         st.success(f"Exhibitor added at {city_n}!")
                         st.rerun()
@@ -87,7 +85,6 @@ with st.sidebar:
         
         if data_list:
             df = pd.DataFrame(data_list)
-            # Only export relevant columns
             df = df[['full_code', 'fsa', 'city', 'lat', 'lon', 'type']] if 'type' in df.columns else df
             csv = df.to_csv(index=False).encode('utf-8')
             
@@ -104,12 +101,12 @@ with st.sidebar:
 # --- MAIN PAGE UI ---
 
 # Center the Logo
-col_l, col_m, col_r = st.columns([1, 2, 1])
+col_l, col_m, col_r = st.columns([1, 1.5, 1])
 with col_m:
     try:
         st.image("logo.png", use_container_width=True)
     except:
-        pass # Silently pass if logo.png is not uploaded yet
+        pass 
 
 st.markdown("<h1 style='text-align: center;'>📍 What area are you coming in from?</h1>", unsafe_allow_html=True)
 
@@ -142,7 +139,7 @@ if not st.session_state.has_submitted:
                     db.collection('attendees').document().set({
                         "lat": location['lat'], "lon": location['lng'], "city": city_name,
                         "fsa": fsa_code, "full_code": clean_code,
-                        "type": "attendee" # Standard blue pin
+                        "type": "attendee" 
                     })
                     st.session_state.has_submitted = True
                     st.rerun() 
@@ -166,7 +163,6 @@ for doc in docs:
     data = doc.to_dict()
     is_ex = data.get("type") == "exhibitor"
     
-    # Assign Red Star for Exhibitors, Blue Pin for Attendees
     p_color = "red" if is_ex else "blue"
     p_icon = "star" if is_ex else "map-pin"
     p_text = f"⭐ Exhibitor ({data.get('city', '')})" if is_ex else data.get("city", "")
@@ -178,4 +174,5 @@ for doc in docs:
         icon=folium.Icon(color=p_color, icon=p_icon, prefix="fa")
     ).add_to(marker_cluster)
 
-st_folium(m, width=1000, height=600)
+# YENI: Haritayi ekrana mükemmel yaymak icin use_container_width eklendi
+st_folium(m, use_container_width=True, height=500)
