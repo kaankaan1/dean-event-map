@@ -14,16 +14,15 @@ st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sideba
 # --- CSS HACKS: STABIL VE GUVENLI VERSIYON ---
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} /* Sag ust menuyu gizle */
-            footer {visibility: hidden;}    /* Alttaki Streamlit yazisini gizle */
+            #MainMenu {visibility: hidden;} 
+            footer {visibility: hidden;}    
             
-            /* Temayi zorla beyaz yap, yazilari siyah yap */
             .stApp {
                 background-color: white !important;
                 color: black !important;
             }
             
-            /* SADECE Sayac yazilarini siyah yap (Menuleri bozmaz!) */
+            /* Sayac yazilarini siyah yap (Menuleri bozmaz!) */
             [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
                 color: black !important;
             }
@@ -33,7 +32,7 @@ hide_streamlit_style = """
                 fill: black !important;
             }
             
-            /* OZEL BUTON RENGI (LOGODAKI KOYU YESIL) */
+            /* OZEL BUTON RENGI */
             div.stButton > button {
                 background-color: #2E5A34 !important; 
                 color: white !important; 
@@ -72,7 +71,6 @@ with st.sidebar:
     if admin_pass == "NorthBay2026":
         st.success("Unlocked!")
         
-        # --- EXHIBITOR INPUT (Company Name Eklendi) ---
         st.divider()
         st.subheader("🏢 Add Exhibitor (Red Star)")
         ex_company = st.text_input("Company Name (e.g., Shimano):")
@@ -107,7 +105,6 @@ with st.sidebar:
             else:
                 st.warning("Enter both Company Name and Code.")
 
-        # --- DATA EXPORT & WIPE ---
         st.divider()
         st.subheader("📊 Data Management")
         attendees_ref = db.collection('attendees')
@@ -191,23 +188,23 @@ st.divider()
 
 met1, met2, met3, met4 = st.columns(4)
 with met2:
-    st.metric(label="🏕️ Total Attendees", value=attendee_count)
+    # YENI: Sayac basligi artik bir lejant gorevi goruyor!
+    st.metric(label="📍 Attendees (Blue Pins)", value=attendee_count)
 with met3:
-    st.metric(label="⭐ Featured Exhibitors", value=exhibitor_count)
+    # YENI: Sayac basligi artik bir lejant gorevi goruyor!
+    st.metric(label="⭐ Exhibitors (Red Stars)", value=exhibitor_count)
 
 st.write("") 
 
 # --- MAP RENDERING ---
 m = folium.Map(location=DEFAULT_COORDS, zoom_start=6)
 
-# SADECE Ziyaretciler (Attendees) icin gruplama (Cluster)
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
 for data in data_list:
     is_ex = data.get("type") == "exhibitor"
     
     if is_ex:
-        # EXHIBITORS (Kirmizi Yildiz) - Gruplanmaz, dogrudan 'm' haritasina eklenir
         comp_name = data.get("company", "Exhibitor")
         p_text = f"⭐ {comp_name} ({data.get('city', '')})"
         
@@ -219,7 +216,6 @@ for data in data_list:
         ).add_to(m) 
         
     else:
-        # ATTENDEES (Mavi Igne) - Gruplanir
         p_text = data.get("city", "")
         
         folium.Marker(
