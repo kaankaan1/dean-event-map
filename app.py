@@ -9,13 +9,22 @@ import json
 import requests
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Live Attendee Map", layout="wide")
+# Bu kisim siteyi en basta zorla 'Light Mode' calistirir!
+st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
-# --- CSS HACKS: HIDE STREAMLIT BRANDING (FIXED ARROW) ---
+# --- CSS HACKS: FORCE LIGHT MODE & HIDE BRANDING ---
+# Sadece sag ustteki menuyu (#MainMenu) ve alttaki "Hosted with Streamlit" yazisini gizler.
+# Arka plani beyaza, yazilari siyaha zorlar.
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} /* Sadece sag ustteki menuyu gizler */
-            footer {visibility: hidden;}    /* Sadece alttaki Streamlit yazisini gizler */
+            #MainMenu {visibility: hidden;} 
+            footer {visibility: hidden;}    
+            
+            /* Temayi zorla beyaz yap */
+            .stApp {
+                background-color: white !important;
+                color: black !important;
+            }
             </style>
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -174,5 +183,4 @@ for doc in docs:
         icon=folium.Icon(color=p_color, icon=p_icon, prefix="fa")
     ).add_to(marker_cluster)
 
-# YENI: Haritayi ekrana mükemmel yaymak icin use_container_width eklendi
 st_folium(m, use_container_width=True, height=500)
