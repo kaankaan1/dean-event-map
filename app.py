@@ -9,21 +9,31 @@ import json
 import requests
 
 # --- PAGE CONFIGURATION ---
-# Bu kisim siteyi en basta zorla 'Light Mode' calistirir!
+# Siteyi en basta zorla 'Light Mode' calistirir ve sidebar'i otomatik ayarlar
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
-# --- CSS HACKS: FORCE LIGHT MODE & HIDE BRANDING ---
-# Sadece sag ustteki menuyu (#MainMenu) ve alttaki "Hosted with Streamlit" yazisini gizler.
-# Arka plani beyaza, yazilari siyaha zorlar.
+# --- CSS HACKS: FORCE LIGHT MODE, CUSTOM BUTTON & HIDE BRANDING ---
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} 
-            footer {visibility: hidden;}    
+            #MainMenu {visibility: hidden;} /* Sag ust menuyu gizle */
+            footer {visibility: hidden;}    /* Alttaki Streamlit yazisini gizle */
             
-            /* Temayi zorla beyaz yap */
+            /* Temayi zorla beyaz yap, yazilari siyah yap */
             .stApp {
                 background-color: white !important;
                 color: black !important;
+            }
+            
+            /* OZEL BUTON RENGI (LOGODAKI KOYU YESIL) */
+            div.stButton > button {
+                background-color: #2E5A34 !important; /* Koyu Orman Yesili */
+                color: white !important; /* Yazi rengi beyaz */
+                border: none;
+            }
+            /* Butonun uzerine gelince (Hover) rengi biraz koyulassin */
+            div.stButton > button:hover {
+                background-color: #1E3A24 !important; 
+                color: white !important;
             }
             </style>
             """
@@ -126,6 +136,7 @@ if not st.session_state.has_submitted:
     with col2:
         postal_code_input = st.text_input("Canadian Postal Code (e.g., P1B 8G6):", max_chars=7)
         st.write("")
+        # Buton artik CSS ile yesil olacak
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
