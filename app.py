@@ -9,20 +9,14 @@ import json
 import requests
 
 # --- PAGE CONFIGURATION ---
+# Siteyi en basta zorla 'Light Mode' calistirir ve sidebar'i otomatik ayarlar
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
 # --- CSS HACKS: FORCE LIGHT MODE, CUSTOM BUTTON & HIDE BRANDING ---
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} 
-            footer {visibility: hidden;}    
-            
-            /* YENI: Streamlit Cloud'un zorla ekledigi kirmizi rozeti GIZLE */
-            .viewerBadge_container {display: none !important;}
-            .viewerBadge_link {display: none !important;}
-            
-            /* YENI: Sag ustteki GitHub (Fork) ikonlarini GIZLE */
-            [data-testid="stToolbar"] {display: none !important;}
+            #MainMenu {visibility: hidden;} /* Sag ust menuyu gizle */
+            footer {visibility: hidden;}    /* Alttaki Streamlit yazisini gizle */
             
             /* Temayi zorla beyaz yap, yazilari siyah yap */
             .stApp {
@@ -32,10 +26,11 @@ hide_streamlit_style = """
             
             /* OZEL BUTON RENGI (LOGODAKI KOYU YESIL) */
             div.stButton > button {
-                background-color: #2E5A34 !important; 
-                color: white !important; 
+                background-color: #2E5A34 !important; /* Koyu Orman Yesili */
+                color: white !important; /* Yazi rengi beyaz */
                 border: none;
             }
+            /* Butonun uzerine gelince (Hover) rengi biraz koyulassin */
             div.stButton > button:hover {
                 background-color: #1E3A24 !important; 
                 color: white !important;
@@ -141,6 +136,7 @@ if not st.session_state.has_submitted:
     with col2:
         postal_code_input = st.text_input("Canadian Postal Code (e.g., P1B 8G6):", max_chars=7)
         st.write("")
+        # Buton artik CSS ile yesil olacak
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
