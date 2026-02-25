@@ -20,11 +20,36 @@ hide_streamlit_style = """
             .viewerBadge_link {display: none !important;}
             [data-testid="stToolbar"] {display: none !important;}
             
+            /* Temayi zorla beyaz yap, yazilari siyah yap */
             .stApp {
                 background-color: white !important;
                 color: black !important;
             }
             
+            /* YENI: SAYAC YAZILARINI ZORLA SIYAH YAP */
+            [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
+                color: black !important;
+            }
+            div[data-testid="stMetricValue"] > div {
+                color: black !important;
+            }
+            
+            /* YENI: KAYBOLAN MENÜ OKUNU SIYAH YAP VE GÖLGELENDIR (KAMUFLAJI BOZ) */
+            [data-testid="collapsedControl"] {
+                color: black !important;
+                background-color: rgba(255, 255, 255, 0.8) !important;
+                border-radius: 50%;
+                box-shadow: 0px 2px 5px rgba(0,0,0,0.2);
+            }
+            [data-testid="collapsedControl"] svg {
+                fill: black !important;
+                color: black !important;
+            }
+            header {
+                background-color: transparent !important;
+            }
+            
+            /* OZEL BUTON RENGI (LOGODAKI KOYU YESIL) */
             div.stButton > button {
                 background-color: #2E5A34 !important; 
                 color: white !important; 
@@ -63,7 +88,7 @@ with st.sidebar:
     if admin_pass == "NorthBay2026":
         st.success("Unlocked!")
         
-        # --- EXHIBITOR INPUT (YENI: Company Name eklendi) ---
+        # --- EXHIBITOR INPUT (Company Name eklendi) ---
         st.divider()
         st.subheader("🏢 Add Exhibitor (Red Star)")
         ex_company = st.text_input("Company Name (e.g., Shimano):")
@@ -87,7 +112,7 @@ with st.sidebar:
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
                             "fsa": clean_ex[:3], "full_code": clean_ex,
                             "type": "exhibitor",
-                            "company": ex_company # YENI VERI
+                            "company": ex_company 
                         })
                         st.success(f"{ex_company} added at {city_n}!")
                         st.rerun()
@@ -210,7 +235,7 @@ for data in data_list:
             popup=p_text,
             tooltip=comp_name,
             icon=folium.Icon(color="red", icon="star", prefix="fa")
-        ).add_to(m) # marker_cluster yerine m'e ekliyoruz!
+        ).add_to(m) 
         
     else:
         # ATTENDEES (Mavi Igne) - Gruplanir
@@ -221,6 +246,6 @@ for data in data_list:
             popup=p_text,
             tooltip="Attendee",
             icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
-        ).add_to(marker_cluster) # marker_cluster'a ekliyoruz!
+        ).add_to(marker_cluster) 
 
 st_folium(m, use_container_width=True, height=500)
