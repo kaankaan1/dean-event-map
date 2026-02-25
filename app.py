@@ -9,28 +9,27 @@ import json
 import requests
 
 # --- PAGE CONFIGURATION ---
-# Siteyi en basta zorla 'Light Mode' calistirir ve sidebar'i otomatik ayarlar
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
 # --- CSS HACKS: FORCE LIGHT MODE, CUSTOM BUTTON & HIDE BRANDING ---
 hide_streamlit_style = """
             <style>
-            #MainMenu {visibility: hidden;} /* Sag ust menuyu gizle */
-            footer {visibility: hidden;}    /* Alttaki Streamlit yazisini gizle */
+            #MainMenu {visibility: hidden;} 
+            footer {visibility: hidden;}    
+            .viewerBadge_container {display: none !important;}
+            .viewerBadge_link {display: none !important;}
+            [data-testid="stToolbar"] {display: none !important;}
             
-            /* Temayi zorla beyaz yap, yazilari siyah yap */
             .stApp {
                 background-color: white !important;
                 color: black !important;
             }
             
-            /* OZEL BUTON RENGI (LOGODAKI KOYU YESIL) */
             div.stButton > button {
-                background-color: #2E5A34 !important; /* Koyu Orman Yesili */
-                color: white !important; /* Yazi rengi beyaz */
+                background-color: #2E5A34 !important; 
+                color: white !important; 
                 border: none;
             }
-            /* Butonun uzerine gelince (Hover) rengi biraz koyulassin */
             div.stButton > button:hover {
                 background-color: #1E3A24 !important; 
                 color: white !important;
@@ -64,13 +63,15 @@ with st.sidebar:
     if admin_pass == "NorthBay2026":
         st.success("Unlocked!")
         
-        # --- EXHIBITOR INPUT ---
+        # --- EXHIBITOR INPUT (YENI: Company Name eklendi) ---
         st.divider()
-        st.subheader("🏢 Add Exhibitor (Red Pin)")
-        ex_code = st.text_input("Vendor Postal Code:", max_chars=7, key="ex_code")
+        st.subheader("🏢 Add Exhibitor (Red Star)")
+        ex_company = st.text_input("Company Name (e.g., Shimano):")
+        ex_code = st.text_input("Vendor Postal Code:", max_chars=7)
+        
         if st.button("Drop Exhibitor Pin"):
             clean_ex = ex_code.replace(" ", "").upper()
-            if len(clean_ex) >= 3:
+            if len(clean_ex) >= 3 and ex_company:
                 try:
                     api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
                     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_ex},+Canada&key={api_key}"
@@ -85,28 +86,28 @@ with st.sidebar:
                         db.collection('attendees').document().set({
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
                             "fsa": clean_ex[:3], "full_code": clean_ex,
-                            "type": "exhibitor" 
+                            "type": "exhibitor",
+                            "company": ex_company # YENI VERI
                         })
-                        st.success(f"Exhibitor added at {city_n}!")
+                        st.success(f"{ex_company} added at {city_n}!")
                         st.rerun()
                     else:
                         st.error("Google API Error. Check code.")
                 except Exception as e:
                     st.error(f"Error: {e}")
             else:
-                st.warning("Enter valid code.")
+                st.warning("Please enter both Company Name and a valid Postal Code.")
 
         # --- DATA EXPORT & WIPE ---
         st.divider()
+        st.subheader("📊 Data Management")
         attendees_ref = db.collection('attendees')
-        docs = attendees_ref.stream()
-        data_list = [doc.to_dict() for doc in docs]
+        docs_admin = attendees_ref.stream()
+        data_list_admin = [doc.to_dict() for doc in docs_admin]
         
-        if data_list:
-            df = pd.DataFrame(data_list)
-            df = df[['full_code', 'fsa', 'city', 'lat', 'lon', 'type']] if 'type' in df.columns else df
+        if data_list_admin:
+            df = pd.DataFrame(data_list_admin)
             csv = df.to_csv(index=False).encode('utf-8')
-            
             st.download_button("📥 Download Data (CSV)", data=csv, file_name='event_data.csv', mime='text/csv')
             
             st.divider() 
@@ -118,8 +119,6 @@ with st.sidebar:
             st.info("No data yet.")
 
 # --- MAIN PAGE UI ---
-
-# Center the Logo
 col_l, col_m, col_r = st.columns([1, 1.5, 1])
 with col_m:
     try:
@@ -134,9 +133,8 @@ if not st.session_state.has_submitted:
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        postal_code_input = st.text_input("Canadian Postal Code (e.g., P1B 8G6):", max_chars=7)
+        postal_code_input = st.text_input("Canadian Postal Code (e.g., P1B 8G6):", max_chars=7, label_visibility="collapsed", placeholder="Canadian Postal Code (e.g., P1B 8G6)")
         st.write("")
-        # Buton artik CSS ile yesil olacak
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
@@ -172,26 +170,57 @@ if not st.session_state.has_submitted:
 else:
     st.success("🎉 Thank you! Your location has been added to the map.")
 
-# --- MAP RENDERING ---
-m = folium.Map(location=DEFAULT_COORDS, zoom_start=7)
-marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
+# --- FETCH DATA & RENDER METRICS ---
 attendees_ref = db.collection('attendees')
 docs = attendees_ref.stream()
+data_list = [doc.to_dict() for doc in docs]
 
-for doc in docs:
-    data = doc.to_dict()
+# Sayaclari hesapla
+attendee_count = sum(1 for d in data_list if d.get("type", "attendee") == "attendee")
+exhibitor_count = sum(1 for d in data_list if d.get("type") == "exhibitor")
+
+st.divider()
+
+# Sayaclari Ekrana Bas (Ortalayarak)
+met1, met2, met3, met4 = st.columns(4)
+with met2:
+    st.metric(label="🏕️ Total Attendees", value=attendee_count)
+with met3:
+    st.metric(label="⭐ Featured Exhibitors", value=exhibitor_count)
+
+st.write("") # Harita oncesi kucuk bir bosluk
+
+# --- MAP RENDERING ---
+m = folium.Map(location=DEFAULT_COORDS, zoom_start=6)
+
+# SADECE Ziyaretciler (Attendees) icin gruplama (Cluster)
+marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
+
+for data in data_list:
     is_ex = data.get("type") == "exhibitor"
     
-    p_color = "red" if is_ex else "blue"
-    p_icon = "star" if is_ex else "map-pin"
-    p_text = f"⭐ Exhibitor ({data.get('city', '')})" if is_ex else data.get("city", "")
-    
-    folium.Marker(
-        location=[data["lat"], data["lon"]],
-        popup=p_text,
-        tooltip="Exhibitor" if is_ex else "Attendee",
-        icon=folium.Icon(color=p_color, icon=p_icon, prefix="fa")
-    ).add_to(marker_cluster)
+    if is_ex:
+        # EXHIBITORS (Kirmizi Yildiz) - Gruplanmaz, dogrudan 'm' haritasina eklenir
+        comp_name = data.get("company", "Exhibitor")
+        p_text = f"⭐ {comp_name} ({data.get('city', '')})"
+        
+        folium.Marker(
+            location=[data["lat"], data["lon"]],
+            popup=p_text,
+            tooltip=comp_name,
+            icon=folium.Icon(color="red", icon="star", prefix="fa")
+        ).add_to(m) # marker_cluster yerine m'e ekliyoruz!
+        
+    else:
+        # ATTENDEES (Mavi Igne) - Gruplanir
+        p_text = data.get("city", "")
+        
+        folium.Marker(
+            location=[data["lat"], data["lon"]],
+            popup=p_text,
+            tooltip="Attendee",
+            icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
+        ).add_to(marker_cluster) # marker_cluster'a ekliyoruz!
 
 st_folium(m, use_container_width=True, height=500)
