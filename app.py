@@ -7,7 +7,7 @@ from firebase_admin import credentials, firestore
 import pandas as pd
 import json
 import requests
-import random  # YENI: Ust uste binen igneleri ayirmak icin eklendi
+import random  
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
@@ -23,17 +23,14 @@ hide_streamlit_style = """
                 color: black !important;
             }
             
-            /* Sayac yazilarini siyah yap (Menuleri bozmaz!) */
             [data-testid="stMetricValue"], [data-testid="stMetricLabel"] {
                 color: black !important;
             }
             
-            /* Beyaz arka planda kaybolan menü okunu siyah yap */
             [data-testid="collapsedControl"] svg {
                 fill: black !important;
             }
             
-            /* OZEL BUTON RENGI */
             div.stButton > button {
                 background-color: #2E5A34 !important; 
                 color: white !important; 
@@ -87,10 +84,19 @@ with st.sidebar:
                     if response['status'] == 'OK':
                         loc = response['results'][0]['geometry']['location']
                         city_n = clean_ex
-                        for comp in response['results'][0]['address_components']:
+                        components = response['results'][0]['address_components']
+                        
+                        # YENİ: Gelişmiş Şehir Adı Çıkarma (Kırsal bölgeler için)
+                        for comp in components:
                             if "locality" in comp["types"] or "postal_town" in comp["types"]:
                                 city_n = comp["long_name"]
                                 break
+                        if city_n == clean_ex: # Şehir bulunamadıysa kırsal bölgelere bak
+                            for comp in components:
+                                if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
+                                    city_n = comp["long_name"]
+                                    break
+                                    
                         db.collection('attendees').document().set({
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
                             "fsa": clean_ex[:3], "full_code": clean_ex,
@@ -156,10 +162,18 @@ if not st.session_state.has_submitted:
                 if response['status'] == 'OK':
                     location = response['results'][0]['geometry']['location']
                     city_name = clean_code 
-                    for comp in response['results'][0]['address_components']:
+                    components = response['results'][0]['address_components']
+                    
+                    # YENİ: Gelişmiş Şehir Adı Çıkarma (Kırsal bölgeler için)
+                    for comp in components:
                         if "locality" in comp["types"] or "postal_town" in comp["types"]:
                             city_name = comp["long_name"]
                             break
+                    if city_name == clean_code: # Şehir bulunamadıysa kırsal bölgelere bak
+                        for comp in components:
+                            if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
+                                city_name = comp["long_name"]
+                                break
                     
                     db.collection('attendees').document().set({
                         "lat": location['lat'], "lon": location['lng'], "city": city_name,
@@ -206,12 +220,11 @@ for data in data_list:
     if is_ex:
         comp_name = data.get("company", "Exhibitor")
         
-        # YENİ: Sonsuz döngüyü ve iğnelerin zıplamasını engellemek için 'Seed' kullanıyoruz.
-        # Bu sayede her şirketin sapma payı kendisine özel ve SABİT oluyor.
+        # Jitter (Sabitlenmis sapma)
         random.seed(comp_name) 
         jitter_lat = random.uniform(-0.003, 0.003)
         jitter_lon = random.uniform(-0.003, 0.003)
-        random.seed() # Diğer rastgele işlemleri bozmamak için seed'i sıfırlıyoruz.
+        random.seed() 
         
         final_lat = data["lat"] + jitter_lat
         final_lon = data["lon"] + jitter_lon
@@ -235,5 +248,4 @@ for data in data_list:
             icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
         ).add_to(marker_cluster) 
 
-# YENİ: Haritanın Streamlit'e gereksiz veri gönderip sayfayı yenilemesini (Beyazlama) tamamen durduruyoruz!
 st_folium(m, use_container_width=True, height=500, returned_objects=[])
