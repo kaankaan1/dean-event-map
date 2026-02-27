@@ -204,13 +204,18 @@ for data in data_list:
     is_ex = data.get("type") == "exhibitor"
     
     if is_ex:
-        # SADECE Kırmızı Yıldızlar (Exhibitors) için 150-200 metre rastgele sapma (Jitter)
-        jitter_lat = random.uniform(-0.002, 0.002)
-        jitter_lon = random.uniform(-0.002, 0.002)
+        comp_name = data.get("company", "Exhibitor")
+        
+        # YENİ: Sonsuz döngüyü ve iğnelerin zıplamasını engellemek için 'Seed' kullanıyoruz.
+        # Bu sayede her şirketin sapma payı kendisine özel ve SABİT oluyor.
+        random.seed(comp_name) 
+        jitter_lat = random.uniform(-0.003, 0.003)
+        jitter_lon = random.uniform(-0.003, 0.003)
+        random.seed() # Diğer rastgele işlemleri bozmamak için seed'i sıfırlıyoruz.
+        
         final_lat = data["lat"] + jitter_lat
         final_lon = data["lon"] + jitter_lon
         
-        comp_name = data.get("company", "Exhibitor")
         p_text = f"⭐ {comp_name} ({data.get('city', '')})"
         
         folium.Marker(
@@ -221,7 +226,6 @@ for data in data_list:
         ).add_to(m) 
         
     else:
-        # Mavi iğneler (Attendees) SIFIR sapma ile posta kodunun tam merkezine!
         p_text = data.get("city", "")
         
         folium.Marker(
@@ -231,4 +235,5 @@ for data in data_list:
             icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
         ).add_to(marker_cluster) 
 
-st_folium(m, use_container_width=True, height=500)
+# YENİ: Haritanın Streamlit'e gereksiz veri gönderip sayfayı yenilemesini (Beyazlama) tamamen durduruyoruz!
+st_folium(m, use_container_width=True, height=500, returned_objects=[])
