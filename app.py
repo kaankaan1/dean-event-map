@@ -7,6 +7,7 @@ from firebase_admin import credentials, firestore
 import pandas as pd
 import json
 import requests
+import random  # YENI: Ust uste binen igneleri ayirmak icin eklendi
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
@@ -188,10 +189,8 @@ st.divider()
 
 met1, met2, met3, met4 = st.columns(4)
 with met2:
-    # YENI: Sayac basligi artik bir lejant gorevi goruyor!
     st.metric(label="📍 Attendees (Blue Pins)", value=attendee_count)
 with met3:
-    # YENI: Sayac basligi artik bir lejant gorevi goruyor!
     st.metric(label="⭐ Exhibitors (Red Stars)", value=exhibitor_count)
 
 st.write("") 
@@ -205,17 +204,24 @@ for data in data_list:
     is_ex = data.get("type") == "exhibitor"
     
     if is_ex:
+        # SADECE Kırmızı Yıldızlar (Exhibitors) için 150-200 metre rastgele sapma (Jitter)
+        jitter_lat = random.uniform(-0.002, 0.002)
+        jitter_lon = random.uniform(-0.002, 0.002)
+        final_lat = data["lat"] + jitter_lat
+        final_lon = data["lon"] + jitter_lon
+        
         comp_name = data.get("company", "Exhibitor")
         p_text = f"⭐ {comp_name} ({data.get('city', '')})"
         
         folium.Marker(
-            location=[data["lat"], data["lon"]],
+            location=[final_lat, final_lon],
             popup=p_text,
             tooltip=comp_name,
             icon=folium.Icon(color="red", icon="star", prefix="fa")
         ).add_to(m) 
         
     else:
+        # Mavi iğneler (Attendees) SIFIR sapma ile posta kodunun tam merkezine!
         p_text = data.get("city", "")
         
         folium.Marker(
