@@ -7,7 +7,8 @@ from firebase_admin import credentials, firestore
 import pandas as pd
 import json
 import requests
-import random  
+import random
+import re  # Posta kodu düzeltmeleri için eklendi
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
@@ -58,8 +59,11 @@ db = firestore.client()
 
 DEFAULT_COORDS = [46.3091, -79.4608]
 
+# --- SESSION STATES ---
 if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
+if 'new_user_loc' not in st.session_state:
+    st.session_state.new_user_loc = None # Yeni kullanıcının lokasyonunu tutacağız
 
 # --- SIDEBAR: HIDDEN ADMIN PANEL ---
 with st.sidebar:
@@ -75,7 +79,7 @@ with st.sidebar:
         ex_code = st.text_input("Vendor Postal Code:", max_chars=7)
         
         if st.button("Drop Exhibitor Pin"):
-            clean_ex = ex_code.replace(" ", "").upper()
+            clean_ex = re.sub(r'[^A-Z0-9]', '', ex_code.upper()) # Sadece harf ve rakam
             if len(clean_ex) >= 3 and ex_company:
                 try:
                     api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
@@ -86,20 +90,22 @@ with st.sidebar:
                         city_n = clean_ex
                         components = response['results'][0]['address_components']
                         
-                        # YENİ: Gelişmiş Şehir Adı Çıkarma (Kırsal bölgeler için)
                         for comp in components:
                             if "locality" in comp["types"] or "postal_town" in comp["types"]:
                                 city_n = comp["long_name"]
                                 break
-                        if city_n == clean_ex: # Şehir bulunamadıysa kırsal bölgelere bak
+                        if city_n == clean_ex:
                             for comp in components:
                                 if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
                                     city_n = comp["long_name"]
                                     break
                                     
+                        # Standardize postal code format for DB (A1A 1A1)
+                        formatted_code = f"{clean_ex[:3]} {clean_ex[3:]}".strip() if len(clean_ex) == 6 else clean_ex
+                        
                         db.collection('attendees').document().set({
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
-                            "fsa": clean_ex[:3], "full_code": clean_ex,
+                            "fsa": clean_ex[:3], "full_code": formatted_code,
                             "type": "exhibitor",
                             "company": ex_company
                         })
@@ -151,7 +157,9 @@ if not st.session_state.has_submitted:
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
-        clean_code = postal_code_input.replace(" ", "").upper()
+        # Gelişmiş Temizleme: Tüm boşlukları ve özel karakterleri sil, büyük harf yap
+        clean_code = re.sub(r'[^A-Z0-9]', '', postal_code_input.upper())
+        
         if len(clean_code) >= 3:
             fsa_code = clean_code[:3]
             try:
@@ -164,22 +172,27 @@ if not st.session_state.has_submitted:
                     city_name = clean_code 
                     components = response['results'][0]['address_components']
                     
-                    # YENİ: Gelişmiş Şehir Adı Çıkarma (Kırsal bölgeler için)
                     for comp in components:
                         if "locality" in comp["types"] or "postal_town" in comp["types"]:
                             city_name = comp["long_name"]
                             break
-                    if city_name == clean_code: # Şehir bulunamadıysa kırsal bölgelere bak
+                    if city_name == clean_code:
                         for comp in components:
                             if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
                                 city_name = comp["long_name"]
                                 break
                     
+                    # Veritabanı için standartlaştırma (Eğer 6 haneliyse araya boşluk koy)
+                    formatted_code = f"{clean_code[:3]} {clean_code[3:]}".strip() if len(clean_code) == 6 else clean_code
+                    
                     db.collection('attendees').document().set({
                         "lat": location['lat'], "lon": location['lng'], "city": city_name,
-                        "fsa": fsa_code, "full_code": clean_code,
+                        "fsa": fsa_code, "full_code": formatted_code,
                         "type": "attendee" 
                     })
+                    
+                    # Kullanıcının lokasyonunu hafızaya al ki haritada vurgulayabilelim
+                    st.session_state.new_user_loc = {"lat": location['lat'], "lon": location['lng'], "city": city_name}
                     st.session_state.has_submitted = True
                     st.rerun() 
                 else:
@@ -217,10 +230,14 @@ marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 for data in data_list:
     is_ex = data.get("type") == "exhibitor"
     
+    # Bu pin az önce eklenen kullanıcıya mı ait?
+    is_newest = False
+    if st.session_state.new_user_loc and data["lat"] == st.session_state.new_user_loc["lat"] and data["lon"] == st.session_state.new_user_loc["lon"]:
+        is_newest = True
+    
     if is_ex:
         comp_name = data.get("company", "Exhibitor")
         
-        # Jitter (Sabitlenmis sapma)
         random.seed(comp_name) 
         jitter_lat = random.uniform(-0.003, 0.003)
         jitter_lon = random.uniform(-0.003, 0.003)
@@ -241,11 +258,21 @@ for data in data_list:
     else:
         p_text = data.get("city", "")
         
-        folium.Marker(
-            location=[data["lat"], data["lon"]],
-            popup=p_text,
-            tooltip="Attendee",
-            icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
-        ).add_to(marker_cluster) 
+        if is_newest:
+            # Yeni Kullanıcı Vurgusu (Yeşil pin ve otomatik açılan Popup)
+            folium.Marker(
+                location=[data["lat"], data["lon"]],
+                popup=folium.Popup(f"<b>You are here!</b><br>{p_text}", show=True), # show=True ile sayfa açılır açılmaz balon görünür
+                tooltip="Your Location",
+                icon=folium.Icon(color="green", icon="ok-sign")
+            ).add_to(m) # Cluster'ın içine atmıyoruz ki haritada kaybolmasın, direkt m'ye ekliyoruz
+        else:
+            # Standart Kullanıcı
+            folium.Marker(
+                location=[data["lat"], data["lon"]],
+                popup=p_text,
+                tooltip="Attendee",
+                icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
+            ).add_to(marker_cluster) 
 
 st_folium(m, use_container_width=True, height=500, returned_objects=[])
