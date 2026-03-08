@@ -8,7 +8,7 @@ import pandas as pd
 import json
 import requests
 import random
-import re  # Posta kodu düzeltmeleri için eklendi
+import re
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
@@ -63,7 +63,7 @@ DEFAULT_COORDS = [46.3091, -79.4608]
 if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
 if 'new_user_loc' not in st.session_state:
-    st.session_state.new_user_loc = None # Yeni kullanıcının lokasyonunu tutacağız
+    st.session_state.new_user_loc = None
 
 # --- SIDEBAR: HIDDEN ADMIN PANEL ---
 with st.sidebar:
@@ -79,7 +79,7 @@ with st.sidebar:
         ex_code = st.text_input("Vendor Postal Code:", max_chars=7)
         
         if st.button("Drop Exhibitor Pin"):
-            clean_ex = re.sub(r'[^A-Z0-9]', '', ex_code.upper()) # Sadece harf ve rakam
+            clean_ex = re.sub(r'[^A-Z0-9]', '', ex_code.upper())
             if len(clean_ex) >= 3 and ex_company:
                 try:
                     api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
@@ -100,7 +100,6 @@ with st.sidebar:
                                     city_n = comp["long_name"]
                                     break
                                     
-                        # Standardize postal code format for DB (A1A 1A1)
                         formatted_code = f"{clean_ex[:3]} {clean_ex[3:]}".strip() if len(clean_ex) == 6 else clean_ex
                         
                         db.collection('attendees').document().set({
@@ -157,7 +156,6 @@ if not st.session_state.has_submitted:
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
-        # Gelişmiş Temizleme: Tüm boşlukları ve özel karakterleri sil, büyük harf yap
         clean_code = re.sub(r'[^A-Z0-9]', '', postal_code_input.upper())
         
         if len(clean_code) >= 3:
@@ -182,7 +180,6 @@ if not st.session_state.has_submitted:
                                 city_name = comp["long_name"]
                                 break
                     
-                    # Veritabanı için standartlaştırma (Eğer 6 haneliyse araya boşluk koy)
                     formatted_code = f"{clean_code[:3]} {clean_code[3:]}".strip() if len(clean_code) == 6 else clean_code
                     
                     db.collection('attendees').document().set({
@@ -191,7 +188,6 @@ if not st.session_state.has_submitted:
                         "type": "attendee" 
                     })
                     
-                    # Kullanıcının lokasyonunu hafızaya al ki haritada vurgulayabilelim
                     st.session_state.new_user_loc = {"lat": location['lat'], "lon": location['lng'], "city": city_name}
                     st.session_state.has_submitted = True
                     st.rerun() 
@@ -204,22 +200,15 @@ if not st.session_state.has_submitted:
 else:
     st.success("🎉 Thank you! Your location has been added to the map.")
 
-# --- FETCH DATA & RENDER METRICS ---
+# --- FETCH DATA & RENDER LEGEND ---
 attendees_ref = db.collection('attendees')
 docs = attendees_ref.stream()
 data_list = [doc.to_dict() for doc in docs]
 
-attendee_count = sum(1 for d in data_list if d.get("type", "attendee") == "attendee")
-exhibitor_count = sum(1 for d in data_list if d.get("type") == "exhibitor")
-
 st.divider()
 
-met1, met2, met3, met4 = st.columns(4)
-with met2:
-    st.metric(label="📍 Attendees (Blue Pins)", value=attendee_count)
-with met3:
-    st.metric(label="⭐ Exhibitors (Red Stars)", value=exhibitor_count)
-
+# Privacy friendly legend replacing the old counters
+st.markdown("<p style='text-align: center; font-size: 18px;'><b>Legend:</b> ⭐ Exhibitors (Red Stars) &nbsp; | &nbsp; 📍 Attendees (Blue Pins)</p>", unsafe_allow_html=True)
 st.write("") 
 
 # --- MAP RENDERING ---
@@ -230,7 +219,6 @@ marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 for data in data_list:
     is_ex = data.get("type") == "exhibitor"
     
-    # Bu pin az önce eklenen kullanıcıya mı ait?
     is_newest = False
     if st.session_state.new_user_loc and data["lat"] == st.session_state.new_user_loc["lat"] and data["lon"] == st.session_state.new_user_loc["lon"]:
         is_newest = True
@@ -238,10 +226,10 @@ for data in data_list:
     if is_ex:
         comp_name = data.get("company", "Exhibitor")
         
-        # Jitter (Sabitlenmiş sapma) - Çakışmayı önlemek için OFFSET artırıldı (0.003'ten 0.025'e)
+        # Jitter reverted to original smaller value (0.003) to prevent landing in the water
         random.seed(comp_name) 
-        jitter_lat = random.uniform(-0.025, 0.025)
-        jitter_lon = random.uniform(-0.025, 0.025)
+        jitter_lat = random.uniform(-0.003, 0.003)
+        jitter_lon = random.uniform(-0.003, 0.003)
         random.seed() 
         
         final_lat = data["lat"] + jitter_lat
@@ -260,15 +248,12 @@ for data in data_list:
         p_text = data.get("city", "")
         
         if is_newest:
-            # Yeni Kullanıcı Vurgusu (Gold/Orange pin ve otomatik açılan Popup)
+            # Silent Gold Pin: No text, no popup, no tooltip.
             folium.Marker(
                 location=[data["lat"], data["lon"]],
-                popup=folium.Popup(f"<b>You are here!</b><br>{p_text}", show=True), 
-                tooltip="Your Location",
-                icon=folium.Icon(color="orange", icon="star") # Renk orange(gold) yapıldı
+                icon=folium.Icon(color="orange", icon="star")
             ).add_to(m) 
         else:
-            # Standart Kullanıcı
             folium.Marker(
                 location=[data["lat"], data["lon"]],
                 popup=p_text,
