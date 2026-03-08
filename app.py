@@ -124,6 +124,18 @@ with st.sidebar:
         data_list_admin = [doc.to_dict() for doc in docs_admin]
         
         if data_list_admin:
+            # --- YENİ: ADMİN SAYAÇLARI ---
+            att_count = sum(1 for d in data_list_admin if d.get("type", "attendee") == "attendee")
+            exh_count = sum(1 for d in data_list_admin if d.get("type") == "exhibitor")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(label="📍 Attendees", value=att_count)
+            with col2:
+                st.metric(label="⭐ Exhibitors", value=exh_count)
+            st.write("")
+            # -----------------------------
+            
             df = pd.DataFrame(data_list_admin)
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Data (CSV)", data=csv, file_name='event_data.csv', mime='text/csv')
