@@ -124,17 +124,27 @@ with st.sidebar:
         data_list_admin = [doc.to_dict() for doc in docs_admin]
         
         if data_list_admin:
-            # --- YENİ: ADMİN SAYAÇLARI ---
+            # --- YENİ: RENKLİ VE ŞIK ADMİN SAYAÇLARI ---
             att_count = sum(1 for d in data_list_admin if d.get("type", "attendee") == "attendee")
             exh_count = sum(1 for d in data_list_admin if d.get("type") == "exhibitor")
             
             col1, col2 = st.columns(2)
             with col1:
-                st.metric(label="📍 Attendees", value=att_count)
+                st.markdown(f"""
+                    <div style="text-align: center; padding: 10px; background-color: #E6F2FF; border-radius: 8px; border: 1px solid #B3D7FF;">
+                        <p style="margin:0; font-size: 14px; color: #0056B3; font-weight: bold;">📍 Attendees</p>
+                        <p style="margin:0; font-size: 26px; color: #007BFF; font-weight: bold;">{att_count}</p>
+                    </div>
+                """, unsafe_allow_html=True)
             with col2:
-                st.metric(label="⭐ Exhibitors", value=exh_count)
+                st.markdown(f"""
+                    <div style="text-align: center; padding: 10px; background-color: #FFEBEE; border-radius: 8px; border: 1px solid #FFCDD2;">
+                        <p style="margin:0; font-size: 14px; color: #C62828; font-weight: bold;">⭐ Exhibitors</p>
+                        <p style="margin:0; font-size: 26px; color: #F44336; font-weight: bold;">{exh_count}</p>
+                    </div>
+                """, unsafe_allow_html=True)
             st.write("")
-            # -----------------------------
+            # -------------------------------------------
             
             df = pd.DataFrame(data_list_admin)
             csv = df.to_csv(index=False).encode('utf-8')
