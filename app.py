@@ -238,9 +238,10 @@ for data in data_list:
     if is_ex:
         comp_name = data.get("company", "Exhibitor")
         
+        # Jitter (Sabitlenmiş sapma) - Çakışmayı önlemek için OFFSET artırıldı (0.003'ten 0.025'e)
         random.seed(comp_name) 
-        jitter_lat = random.uniform(-0.003, 0.003)
-        jitter_lon = random.uniform(-0.003, 0.003)
+        jitter_lat = random.uniform(-0.025, 0.025)
+        jitter_lon = random.uniform(-0.025, 0.025)
         random.seed() 
         
         final_lat = data["lat"] + jitter_lat
@@ -259,13 +260,13 @@ for data in data_list:
         p_text = data.get("city", "")
         
         if is_newest:
-            # Yeni Kullanıcı Vurgusu (Yeşil pin ve otomatik açılan Popup)
+            # Yeni Kullanıcı Vurgusu (Gold/Orange pin ve otomatik açılan Popup)
             folium.Marker(
                 location=[data["lat"], data["lon"]],
-                popup=folium.Popup(f"<b>You are here!</b><br>{p_text}", show=True), # show=True ile sayfa açılır açılmaz balon görünür
+                popup=folium.Popup(f"<b>You are here!</b><br>{p_text}", show=True), 
                 tooltip="Your Location",
-                icon=folium.Icon(color="green", icon="ok-sign")
-            ).add_to(m) # Cluster'ın içine atmıyoruz ki haritada kaybolmasın, direkt m'ye ekliyoruz
+                icon=folium.Icon(color="orange", icon="star") # Renk orange(gold) yapıldı
+            ).add_to(m) 
         else:
             # Standart Kullanıcı
             folium.Marker(
