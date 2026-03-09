@@ -13,7 +13,7 @@ import re
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
-# --- CSS HACKS: STABIL VE GUVENLI VERSIYON ---
+# --- CSS HACKS: STABLE AND SECURE VERSION ---
 hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;} 
@@ -124,7 +124,7 @@ with st.sidebar:
         data_list_admin = [doc.to_dict() for doc in docs_admin]
         
         if data_list_admin:
-            # --- YENİ: RENKLİ VE ŞIK ADMİN SAYAÇLARI ---
+            # --- NEW: COLORFUL AND STYLISH ADMIN COUNTERS ---
             att_count = sum(1 for d in data_list_admin if d.get("type", "attendee") == "attendee")
             exh_count = sum(1 for d in data_list_admin if d.get("type") == "exhibitor")
             
