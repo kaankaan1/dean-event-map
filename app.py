@@ -3,7 +3,7 @@ import folium
 from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, db # <--- BURASI DEĞİŞTİ (firestore yerine db)
 import pandas as pd
 import json
 import requests
@@ -45,17 +45,21 @@ hide_streamlit_style = """
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# --- FIREBASE SETUP ---
+# --- FIREBASE SETUP (REALTIME DATABASE) ---
 if not firebase_admin._apps:
     if 'firebase' in st.secrets:
         key_dict = json.loads(st.secrets["firebase"]["my_project_settings"])
+        db_url = st.secrets["firebase"].get("database_url", "") # Secrets'tan URL'yi alıyoruz
         cred = credentials.Certificate(key_dict)
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': db_url
+        })
     else:
         cred = credentials.Certificate("firebase_key.json")
-    
-    firebase_admin.initialize_app(cred)
-
-db = firestore.client()
+        # LOKALDE ÇALIŞIYORSAN URL'Yİ BURAYA YAPIŞTIR:
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': 'https://eventmapdb-b59f9-default-rtdb.firebaseio.com/' 
+        })
 
 DEFAULT_COORDS = [46.3091, -79.4608]
 
@@ -64,16 +68,6 @@ if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
 if 'new_user_loc' not in st.session_state:
     st.session_state.new_user_loc = None
-
-# ==========================================
-# 🚀 YENİ EKLENEN KISIM: CACHE (ÖNBELLEK) SİSTEMİ
-# ==========================================
-@st.cache_data(ttl=60) # 60 saniyede bir otomatik yenilenir (güvenlik için)
-def get_all_attendees():
-    """Veritabanındaki tüm pinleri çeker ve hafızada tutar."""
-    docs = db.collection('attendees').stream()
-    return [doc.to_dict() for doc in docs]
-# ==========================================
 
 
 # --- SIDEBAR: HIDDEN ADMIN PANEL ---
@@ -113,15 +107,14 @@ with st.sidebar:
                                     
                         formatted_code = f"{clean_ex[:3]} {clean_ex[3:]}".strip() if len(clean_ex) == 6 else clean_ex
                         
-                        db.collection('attendees').document().set({
+                        # REALTIME DATABASE'E VERİ EKLEME (push)
+                        ref = db.reference('attendees')
+                        ref.push({
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
                             "fsa": clean_ex[:3], "full_code": formatted_code,
                             "type": "exhibitor",
                             "company": ex_company
                         })
-                        
-                        # CACHE'İ TEMİZLE Kİ YENİ EKLENEN HEMEN GÖRÜNSÜN
-                        get_all_attendees.clear()
                         
                         st.success(f"{ex_company} added at {city_n}!")
                         st.rerun()
@@ -135,11 +128,12 @@ with st.sidebar:
         st.divider()
         st.subheader("📊 Data Management")
         
-        # CACHE KULLANARAK VERİYİ ÇEK (Eski stream kodları silindi)
-        data_list_admin = get_all_attendees()
+        # REALTIME DATABASE'DEN TÜM VERİLERİ ÇEKME
+        ref = db.reference('attendees')
+        data_dict = ref.get()
+        data_list_admin = list(data_dict.values()) if data_dict else []
         
         if data_list_admin:
-            # --- NEW: COLORFUL AND STYLISH ADMIN COUNTERS ---
             att_count = sum(1 for d in data_list_admin if d.get("type", "attendee") == "attendee")
             exh_count = sum(1 for d in data_list_admin if d.get("type") == "exhibitor")
             
@@ -159,7 +153,6 @@ with st.sidebar:
                     </div>
                 """, unsafe_allow_html=True)
             st.write("")
-            # -------------------------------------------
             
             df = pd.DataFrame(data_list_admin)
             csv = df.to_csv(index=False).encode('utf-8')
@@ -167,10 +160,8 @@ with st.sidebar:
             
             st.divider() 
             if st.button("🗑️ Wipe All Data"):
-                for doc in db.collection('attendees').stream():
-                    doc.reference.delete()
-                # TÜM VERİ SİLİNDİ, CACHE'İ DE TEMİZLE!
-                get_all_attendees.clear()
+                # REALTIME DATABASE'İ TEK TUŞLA TEMİZLEME
+                db.reference('attendees').delete()
                 st.rerun()
         else:
             st.info("No data yet.")
@@ -221,14 +212,13 @@ if not st.session_state.has_submitted:
                     
                     formatted_code = f"{clean_code[:3]} {clean_code[3:]}".strip() if len(clean_code) == 6 else clean_code
                     
-                    db.collection('attendees').document().set({
+                    # REALTIME DATABASE'E YENİ KATILIMCI EKLEME (push)
+                    ref = db.reference('attendees')
+                    ref.push({
                         "lat": location['lat'], "lon": location['lng'], "city": city_name,
                         "fsa": fsa_code, "full_code": formatted_code,
                         "type": "attendee" 
                     })
-                    
-                    # YENİ KİŞİ GİRDİ, CACHE'İ TEMİZLE Kİ HEMEN HARİTAYA DÜŞSÜN
-                    get_all_attendees.clear()
                     
                     st.session_state.new_user_loc = {"lat": location['lat'], "lon": location['lng'], "city": city_name}
                     st.session_state.has_submitted = True
@@ -246,10 +236,11 @@ else:
 # --- FETCH DATA & RENDER LEGEND ---
 st.divider()
 
-# CACHE KULLANARAK VERİYİ ÇEK (Her seferinde Firebase'e sormayacak!)
-data_list = get_all_attendees()
+# GERÇEK ZAMANLI VERİYİ ÇEK (Önbellek (Cache) Yok, Herkes Anında Görecek!)
+ref = db.reference('attendees')
+data_dict = ref.get()
+data_list = list(data_dict.values()) if data_dict else []
 
-# Privacy friendly legend replacing the old counters
 st.markdown("<p style='text-align: center; font-size: 18px;'><b>Legend:</b> ⭐ Exhibitors (Red Stars) &nbsp; | &nbsp; 📍 Attendees (Blue Pins)</p>", unsafe_allow_html=True)
 st.write("") 
 
@@ -261,14 +252,8 @@ marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 for data in data_list:
     is_ex = data.get("type") == "exhibitor"
     
-    is_newest = False
-    if st.session_state.new_user_loc and data["lat"] == st.session_state.new_user_loc["lat"] and data["lon"] == st.session_state.new_user_loc["lon"]:
-        is_newest = True
-    
     if is_ex:
         comp_name = data.get("company", "Exhibitor")
-        
-        # Jitter reverted to original smaller value (0.003) to prevent landing in the water
         random.seed(comp_name) 
         jitter_lat = random.uniform(-0.003, 0.003)
         jitter_lon = random.uniform(-0.003, 0.003)
@@ -289,18 +274,12 @@ for data in data_list:
     else:
         p_text = data.get("city", "")
         
-        if is_newest:
-            # Silent Gold Pin: No text, no popup, no tooltip.
-            folium.Marker(
-                location=[data["lat"], data["lon"]],
-                icon=folium.Icon(color="orange", icon="star")
-            ).add_to(m) 
-        else:
-            folium.Marker(
-                location=[data["lat"], data["lon"]],
-                popup=p_text,
-                tooltip="Attendee",
-                icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
-            ).add_to(marker_cluster) 
+        # Herkes anında veri çekeceği için Sanal İğne (Orange Star) mantığına artık gerek kalmadı!
+        folium.Marker(
+            location=[data["lat"], data["lon"]],
+            popup=p_text,
+            tooltip="Attendee",
+            icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
+        ).add_to(marker_cluster) 
 
 st_folium(m, use_container_width=True, height=500, returned_objects=[])
