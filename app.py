@@ -9,13 +9,12 @@ import json
 import requests
 import random
 import re
-from streamlit_autorefresh import st_autorefresh # Yeni kütüphane
+from streamlit_autorefresh import st_autorefresh
 
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
-# --- AUTO REFRESH: Her 15 saniyede bir sayfayı sessizce yeniler ---
-# Bu sayede Dean'in ekranında iğneler kendi kendine belirir.
+# --- AUTO REFRESH ---
 st_autorefresh(interval=15 * 1000, key="datarefresh")
 
 # --- CSS HACKS ---
@@ -41,7 +40,6 @@ if not firebase_admin._apps:
             'databaseURL': db_url
         })
     else:
-        # Lokal testlerin için URL'yi buraya yazdım
         cred = credentials.Certificate("firebase_key.json")
         firebase_admin.initialize_app(cred, {
             'databaseURL': 'https://eventmapdb-b59f9-default-rtdb.firebaseio.com/' 
@@ -52,6 +50,8 @@ DEFAULT_COORDS = [46.3091, -79.4608]
 # --- SESSION STATES ---
 if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
+if 'new_user_loc' not in st.session_state:
+    st.session_state.new_user_loc = None
 
 # --- SIDEBAR: ADMIN PANEL ---
 with st.sidebar:
@@ -74,11 +74,18 @@ with st.sidebar:
                     response = requests.get(url).json()
                     if response['status'] == 'OK':
                         loc = response['results'][0]['geometry']['location']
-                        city_n = "Unknown"
-                        for comp in response['results'][0]['address_components']:
+                        city_n = clean_ex
+                        components = response['results'][0]['address_components']
+                        
+                        for comp in components:
                             if "locality" in comp["types"] or "postal_town" in comp["types"]:
                                 city_n = comp["long_name"]
                                 break
+                        if city_n == clean_ex:
+                            for comp in components:
+                                if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
+                                    city_n = comp["long_name"]
+                                    break
                         
                         db.reference('attendees').push({
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
@@ -127,19 +134,35 @@ if not st.session_state.has_submitted:
                 
                 if response['status'] == 'OK':
                     location = response['results'][0]['geometry']['location']
-                    city_name = "Canada"
-                    for comp in response['results'][0]['address_components']:
-                        if "locality" in comp["types"]:
+                    city_name = clean_code
+                    components = response['results'][0]['address_components']
+                    
+                    # TANK GİBİ SAĞLAM ŞEHİR BULMA KODU (GERİ GELDİ)
+                    for comp in components:
+                        if "locality" in comp["types"] or "postal_town" in comp["types"]:
                             city_name = comp["long_name"]
                             break
+                    if city_name == clean_code:
+                        for comp in components:
+                            if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
+                                city_name = comp["long_name"]
+                                break
                     
                     db.reference('attendees').push({
                         "lat": location['lat'], "lon": location['lng'], "city": city_name,
                         "type": "attendee" 
                     })
+                    
+                    # TURUNCU YILDIZ İÇİN KULLANICI KONUMUNU HAFIZAYA AL
+                    st.session_state.new_user_loc = {"lat": location['lat'], "lon": location['lng'], "city": city_name}
                     st.session_state.has_submitted = True
                     st.rerun() 
-            except: st.error("Service error.")
+                else:
+                    st.error("Postal code not found. Please try again.")
+            except Exception as e:
+                st.error(f"Service error: {e}")
+        else:
+            st.error("Please enter a valid code.")
 else:
     st.success("🎉 Thank you! Your location has been added.")
 
@@ -155,7 +178,14 @@ m = folium.Map(location=DEFAULT_COORDS, zoom_start=6)
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
 for data in data_list:
-    if data.get("type") == "exhibitor":
+    is_ex = data.get("type") == "exhibitor"
+    
+    # KENDİ İĞNESİNİ TESPİT ETME MANTIĞI
+    is_newest = False
+    if st.session_state.new_user_loc and data["lat"] == st.session_state.new_user_loc["lat"] and data["lon"] == st.session_state.new_user_loc["lon"]:
+        is_newest = True
+
+    if is_ex:
         comp_name = data.get("company", "Exhibitor")
         random.seed(comp_name)
         jitter_lat = random.uniform(-0.003, 0.003)
@@ -165,9 +195,22 @@ for data in data_list:
             tooltip=comp_name, icon=folium.Icon(color="red", icon="star", prefix="fa")
         ).add_to(m)
     else:
-        folium.Marker(
-            location=[data["lat"], data["lon"]],
-            icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
-        ).add_to(marker_cluster)
+        p_text = data.get("city", "")
+        if is_newest:
+            # TURUNCU YILDIZ (Sadece o an giren kişiye görünür, diğer herkese mavi pin görünür)
+            folium.Marker(
+                location=[data["lat"], data["lon"]],
+                popup="You are here!",
+                tooltip="You are here!",
+                icon=folium.Icon(color="orange", icon="star")
+            ).add_to(m)
+        else:
+            # NORMAL MAVİ PİN
+            folium.Marker(
+                location=[data["lat"], data["lon"]],
+                popup=p_text,
+                tooltip="Attendee",
+                icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
+            ).add_to(marker_cluster)
 
 st_folium(m, use_container_width=True, height=500, returned_objects=[])
