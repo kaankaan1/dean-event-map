@@ -65,6 +65,17 @@ if 'has_submitted' not in st.session_state:
 if 'new_user_loc' not in st.session_state:
     st.session_state.new_user_loc = None
 
+# ==========================================
+# 🚀 YENİ EKLENEN KISIM: CACHE (ÖNBELLEK) SİSTEMİ
+# ==========================================
+@st.cache_data(ttl=60) # 60 saniyede bir otomatik yenilenir (güvenlik için)
+def get_all_attendees():
+    """Veritabanındaki tüm pinleri çeker ve hafızada tutar."""
+    docs = db.collection('attendees').stream()
+    return [doc.to_dict() for doc in docs]
+# ==========================================
+
+
 # --- SIDEBAR: HIDDEN ADMIN PANEL ---
 with st.sidebar:
     st.header("🔒 Admin Access")
@@ -108,6 +119,10 @@ with st.sidebar:
                             "type": "exhibitor",
                             "company": ex_company
                         })
+                        
+                        # CACHE'İ TEMİZLE Kİ YENİ EKLENEN HEMEN GÖRÜNSÜN
+                        get_all_attendees.clear()
+                        
                         st.success(f"{ex_company} added at {city_n}!")
                         st.rerun()
                     else:
@@ -119,9 +134,9 @@ with st.sidebar:
 
         st.divider()
         st.subheader("📊 Data Management")
-        attendees_ref = db.collection('attendees')
-        docs_admin = attendees_ref.stream()
-        data_list_admin = [doc.to_dict() for doc in docs_admin]
+        
+        # CACHE KULLANARAK VERİYİ ÇEK (Eski stream kodları silindi)
+        data_list_admin = get_all_attendees()
         
         if data_list_admin:
             # --- NEW: COLORFUL AND STYLISH ADMIN COUNTERS ---
@@ -154,6 +169,8 @@ with st.sidebar:
             if st.button("🗑️ Wipe All Data"):
                 for doc in db.collection('attendees').stream():
                     doc.reference.delete()
+                # TÜM VERİ SİLİNDİ, CACHE'İ DE TEMİZLE!
+                get_all_attendees.clear()
                 st.rerun()
         else:
             st.info("No data yet.")
@@ -210,6 +227,9 @@ if not st.session_state.has_submitted:
                         "type": "attendee" 
                     })
                     
+                    # YENİ KİŞİ GİRDİ, CACHE'İ TEMİZLE Kİ HEMEN HARİTAYA DÜŞSÜN
+                    get_all_attendees.clear()
+                    
                     st.session_state.new_user_loc = {"lat": location['lat'], "lon": location['lng'], "city": city_name}
                     st.session_state.has_submitted = True
                     st.rerun() 
@@ -222,12 +242,12 @@ if not st.session_state.has_submitted:
 else:
     st.success("🎉 Thank you! Your location has been added to the map.")
 
-# --- FETCH DATA & RENDER LEGEND ---
-attendees_ref = db.collection('attendees')
-docs = attendees_ref.stream()
-data_list = [doc.to_dict() for doc in docs]
 
+# --- FETCH DATA & RENDER LEGEND ---
 st.divider()
+
+# CACHE KULLANARAK VERİYİ ÇEK (Her seferinde Firebase'e sormayacak!)
+data_list = get_all_attendees()
 
 # Privacy friendly legend replacing the old counters
 st.markdown("<p style='text-align: center; font-size: 18px;'><b>Legend:</b> ⭐ Exhibitors (Red Stars) &nbsp; | &nbsp; 📍 Attendees (Blue Pins)</p>", unsafe_allow_html=True)
