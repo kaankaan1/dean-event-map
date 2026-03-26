@@ -145,9 +145,11 @@ with col_m:
 st.markdown("<h1 style='text-align: center;'>📍 What area are you coming in from?</h1>", unsafe_allow_html=True)
 
 if not st.session_state.has_submitted:
+    st.markdown("<p style='text-align: center;'>Enter your Canadian postal code to see how far our community reaches:</p>", unsafe_allow_html=True)
+    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        postal_code_input = st.text_input("Postal Code:", max_chars=7, label_visibility="collapsed", placeholder="e.g., P1B 8G6")
+        postal_code_input = st.text_input("Postal Code (e.g., P1B 8G6):", max_chars=7, label_visibility="collapsed", placeholder="P1B 8G6")
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
@@ -223,11 +225,11 @@ for data in data_list:
     else:
         p_text = data.get("city", "")
         if is_newest:
-            # TURUNCU YILDIZ (Sadece o an giren kişiye görünür, diğer herkese mavi pin görünür)
+            # GÜNCELLEME: Hala turuncu yıldız ama yazısı Attendee
             folium.Marker(
                 location=[data["lat"], data["lon"]],
-                popup="You are here!",
-                tooltip="You are here!",
+                popup="Attendee", # Popup yazısı değişti
+                tooltip="Attendee", # Mouse hover yazısı değişti
                 icon=folium.Icon(color="orange", icon="star")
             ).add_to(m)
         else:
