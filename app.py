@@ -96,19 +96,45 @@ with st.sidebar:
                 except Exception as e:
                     st.error(f"Error: {e}")
 
+        # --- YENİ EKLENEN ŞIK ADMİN PANELİ GÖRÜNÜMÜ ---
         st.divider()
+        st.subheader("📊 Data Management")
         ref = db.reference('attendees')
         data_dict = ref.get()
         data_list_admin = list(data_dict.values()) if data_dict else []
         
         if data_list_admin:
-            st.write(f"Total Pins: {len(data_list_admin)}")
+            att_count = sum(1 for d in data_list_admin if d.get("type", "attendee") == "attendee")
+            exh_count = sum(1 for d in data_list_admin if d.get("type") == "exhibitor")
+            
+            # NorthBay yeşil temasına özel renkler
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(f"""
+                    <div style="text-align: center; padding: 10px; background-color: #E8F5E9; border-radius: 8px; border: 1px solid #C8E6C9;">
+                        <p style="margin:0; font-size: 14px; color: #2E7D32; font-weight: bold;">📍 Attendees</p>
+                        <p style="margin:0; font-size: 26px; color: #1B5E20; font-weight: bold;">{att_count}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            with col2:
+                st.markdown(f"""
+                    <div style="text-align: center; padding: 10px; background-color: #FFF3E0; border-radius: 8px; border: 1px solid #FFE0B2;">
+                        <p style="margin:0; font-size: 14px; color: #E65100; font-weight: bold;">⭐ Exhibitors</p>
+                        <p style="margin:0; font-size: 26px; color: #E65100; font-weight: bold;">{exh_count}</p>
+                    </div>
+                """, unsafe_allow_html=True)
+            st.write("")
+            
             df = pd.DataFrame(data_list_admin)
             csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download CSV", data=csv, file_name='event_data.csv')
+            st.download_button("📥 Download Data (CSV)", data=csv, file_name='event_data.csv', mime='text/csv')
+            
+            st.divider() 
             if st.button("🗑️ Wipe All Data"):
                 db.reference('attendees').delete()
                 st.rerun()
+        else:
+            st.info("No data yet.")
 
 # --- MAIN PAGE UI ---
 col_l, col_m, col_r = st.columns([1, 1.5, 1])
