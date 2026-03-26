@@ -14,8 +14,15 @@ from streamlit_autorefresh import st_autorefresh
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
-# --- AUTO REFRESH ---
-st_autorefresh(interval=15 * 1000, key="datarefresh")
+# --- SESSION STATES ---
+if 'has_submitted' not in st.session_state:
+    st.session_state.has_submitted = False
+if 'new_user_loc' not in st.session_state:
+    st.session_state.new_user_loc = None
+
+# --- AUTO REFRESH (AKILLI YENİLEME VE 30 SANİYE) ---
+if not st.session_state.has_submitted:
+    st_autorefresh(interval=30 * 1000, key="datarefresh")
 
 # --- CSS HACKS ---
 hide_streamlit_style = """
@@ -42,12 +49,6 @@ if not firebase_admin._apps:
         firebase_admin.initialize_app(cred, {'databaseURL': 'https://eventmapdb-b59f9-default-rtdb.firebaseio.com/'})
 
 DEFAULT_COORDS = [46.3091, -79.4608]
-
-# --- SESSION STATES ---
-if 'has_submitted' not in st.session_state:
-    st.session_state.has_submitted = False
-if 'new_user_loc' not in st.session_state:
-    st.session_state.new_user_loc = None
 
 # --- SIDEBAR: ADMIN PANEL ---
 with st.sidebar:
@@ -176,10 +177,10 @@ if not st.session_state.has_submitted:
 else:
     st.success("🎉 Thank you! Your location has been added.")
 
-# --- FETCH & RENDER MAP (KURŞUNGEÇİRMEZ KALKAN BURADA) ---
+# --- FETCH & RENDER MAP (30 SANİYE KALKAN) ---
 st.divider()
 
-@st.cache_data(ttl=15)
+@st.cache_data(ttl=30)
 def get_cached_data():
     ref = db.reference('attendees')
     d_dict = ref.get()
