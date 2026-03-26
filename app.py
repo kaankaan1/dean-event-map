@@ -30,20 +30,16 @@ hide_streamlit_style = """
             """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
-# --- FIREBASE SETUP (REALTIME DATABASE) ---
+# --- FIREBASE SETUP ---
 if not firebase_admin._apps:
     if 'firebase' in st.secrets:
         key_dict = json.loads(st.secrets["firebase"]["my_project_settings"])
         db_url = st.secrets["firebase"].get("database_url", "")
         cred = credentials.Certificate(key_dict)
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': db_url
-        })
+        firebase_admin.initialize_app(cred, {'databaseURL': db_url})
     else:
         cred = credentials.Certificate("firebase_key.json")
-        firebase_admin.initialize_app(cred, {
-            'databaseURL': 'https://eventmapdb-b59f9-default-rtdb.firebaseio.com/' 
-        })
+        firebase_admin.initialize_app(cred, {'databaseURL': 'https://eventmapdb-b59f9-default-rtdb.firebaseio.com/'})
 
 DEFAULT_COORDS = [46.3091, -79.4608]
 
@@ -76,7 +72,6 @@ with st.sidebar:
                         loc = response['results'][0]['geometry']['location']
                         city_n = clean_ex
                         components = response['results'][0]['address_components']
-                        
                         for comp in components:
                             if "locality" in comp["types"] or "postal_town" in comp["types"]:
                                 city_n = comp["long_name"]
@@ -86,28 +81,23 @@ with st.sidebar:
                                 if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
                                     city_n = comp["long_name"]
                                     break
-                        
                         db.reference('attendees').push({
-                            "lat": loc['lat'], "lon": loc['lng'], "city": city_n,
-                            "type": "exhibitor", "company": ex_company
+                            "lat": loc['lat'], "lon": loc['lng'], "city": city_n, "type": "exhibitor", "company": ex_company
                         })
                         st.success(f"Added {ex_company}!")
                         st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
 
-        # --- YENİ EKLENEN ŞIK ADMİN PANELİ GÖRÜNÜMÜ ---
         st.divider()
         st.subheader("📊 Data Management")
-        ref = db.reference('attendees')
-        data_dict = ref.get()
-        data_list_admin = list(data_dict.values()) if data_dict else []
+        ref_admin = db.reference('attendees')
+        data_dict_admin = ref_admin.get()
+        data_list_admin = list(data_dict_admin.values()) if data_dict_admin else []
         
         if data_list_admin:
             att_count = sum(1 for d in data_list_admin if d.get("type", "attendee") == "attendee")
             exh_count = sum(1 for d in data_list_admin if d.get("type") == "exhibitor")
-            
-            # NorthBay yeşil temasına özel renkler
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown(f"""
@@ -124,14 +114,13 @@ with st.sidebar:
                     </div>
                 """, unsafe_allow_html=True)
             st.write("")
-            
             df = pd.DataFrame(data_list_admin)
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Data (CSV)", data=csv, file_name='event_data.csv', mime='text/csv')
-            
             st.divider() 
             if st.button("🗑️ Wipe All Data"):
                 db.reference('attendees').delete()
+                st.cache_data.clear()
                 st.rerun()
         else:
             st.info("No data yet.")
@@ -146,10 +135,9 @@ st.markdown("<h1 style='text-align: center;'>📍 What area are you coming in fr
 
 if not st.session_state.has_submitted:
     st.markdown("<p style='text-align: center;'>Enter your Canadian postal code to see how far our community reaches:</p>", unsafe_allow_html=True)
-    
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        postal_code_input = st.text_input("Postal Code (e.g., P1B 8G6):", max_chars=7, label_visibility="collapsed", placeholder="P1B 8G6")
+        postal_code_input = st.text_input("Postal Code:", max_chars=7, label_visibility="collapsed", placeholder="e.g., P1B 8G6")
         submit_button = st.button("Submit", use_container_width=True)
 
     if submit_button and postal_code_input:
@@ -159,13 +147,10 @@ if not st.session_state.has_submitted:
                 api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
                 url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_code},+Canada&key={api_key}"
                 response = requests.get(url).json()
-                
                 if response['status'] == 'OK':
                     location = response['results'][0]['geometry']['location']
                     city_name = clean_code
                     components = response['results'][0]['address_components']
-                    
-                    # TANK GİBİ SAĞLAM ŞEHİR BULMA KODU (GERİ GELDİ)
                     for comp in components:
                         if "locality" in comp["types"] or "postal_town" in comp["types"]:
                             city_name = comp["long_name"]
@@ -175,15 +160,12 @@ if not st.session_state.has_submitted:
                             if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
                                 city_name = comp["long_name"]
                                 break
-                    
                     db.reference('attendees').push({
-                        "lat": location['lat'], "lon": location['lng'], "city": city_name,
-                        "type": "attendee" 
+                        "lat": location['lat'], "lon": location['lng'], "city": city_name, "type": "attendee" 
                     })
-                    
-                    # TURUNCU YILDIZ İÇİN KULLANICI KONUMUNU HAFIZAYA AL
                     st.session_state.new_user_loc = {"lat": location['lat'], "lon": location['lng'], "city": city_name}
                     st.session_state.has_submitted = True
+                    st.cache_data.clear()
                     st.rerun() 
                 else:
                     st.error("Postal code not found. Please try again.")
@@ -194,11 +176,16 @@ if not st.session_state.has_submitted:
 else:
     st.success("🎉 Thank you! Your location has been added.")
 
-# --- FETCH & RENDER MAP ---
+# --- FETCH & RENDER MAP (KURŞUNGEÇİRMEZ KALKAN BURADA) ---
 st.divider()
-ref = db.reference('attendees')
-data_dict = ref.get()
-data_list = list(data_dict.values()) if data_dict else []
+
+@st.cache_data(ttl=15)
+def get_cached_data():
+    ref = db.reference('attendees')
+    d_dict = ref.get()
+    return list(d_dict.values()) if d_dict else []
+
+data_list = get_cached_data()
 
 st.markdown("<p style='text-align: center; font-size: 18px;'><b>Legend:</b> ⭐ Exhibitors &nbsp; | &nbsp; 📍 Attendees</p>", unsafe_allow_html=True)
 
@@ -207,8 +194,6 @@ marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
 for data in data_list:
     is_ex = data.get("type") == "exhibitor"
-    
-    # KENDİ İĞNESİNİ TESPİT ETME MANTIĞI
     is_newest = False
     if st.session_state.new_user_loc and data["lat"] == st.session_state.new_user_loc["lat"] and data["lon"] == st.session_state.new_user_loc["lon"]:
         is_newest = True
@@ -219,26 +204,17 @@ for data in data_list:
         jitter_lat = random.uniform(-0.003, 0.003)
         jitter_lon = random.uniform(-0.003, 0.003)
         folium.Marker(
-            location=[data["lat"] + jitter_lat, data["lon"] + jitter_lon],
-            tooltip=comp_name, icon=folium.Icon(color="red", icon="star", prefix="fa")
+            location=[data["lat"] + jitter_lat, data["lon"] + jitter_lon], tooltip=comp_name, icon=folium.Icon(color="red", icon="star", prefix="fa")
         ).add_to(m)
     else:
         p_text = data.get("city", "")
         if is_newest:
-            # GÜNCELLEME: Hala turuncu yıldız ama yazısı Attendee
             folium.Marker(
-                location=[data["lat"], data["lon"]],
-                popup="Attendee", # Popup yazısı değişti
-                tooltip="Attendee", # Mouse hover yazısı değişti
-                icon=folium.Icon(color="orange", icon="star")
+                location=[data["lat"], data["lon"]], popup="Attendee", tooltip="Attendee", icon=folium.Icon(color="orange", icon="star")
             ).add_to(m)
         else:
-            # NORMAL MAVİ PİN
             folium.Marker(
-                location=[data["lat"], data["lon"]],
-                popup=p_text,
-                tooltip="Attendee",
-                icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
+                location=[data["lat"], data["lon"]], popup=p_text, tooltip="Attendee", icon=folium.Icon(color="blue", icon="map-pin", prefix="fa")
             ).add_to(marker_cluster)
 
 st_folium(m, use_container_width=True, height=500, returned_objects=[])
