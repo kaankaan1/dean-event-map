@@ -12,9 +12,9 @@ import re
 from streamlit_autorefresh import st_autorefresh
 
 # --- PAGE CONFIGURATION ---
-st.set_page_config(page_title="Live Attendee Map", layout="wide", initial_sidebar_state="auto")
+st.set_page_config(page_title="North Bay Live Attendee Map", layout="wide", initial_sidebar_state="auto")
 
-# --- SESSION STATES (Spam Koruması İçin) ---
+# --- SESSION STATES ---
 if 'has_submitted' not in st.session_state:
     st.session_state.has_submitted = False
 if 'new_user_loc' not in st.session_state:
@@ -25,7 +25,7 @@ is_live_mode = st.query_params.get("mode") == "live"
 if is_live_mode:
     st_autorefresh(interval=30 * 1000, key="datarefresh")
 
-# --- CSS HACKS ---
+# --- CSS HACKS (NORTH BAY GREEN THEME) ---
 hide_streamlit_style = """
             <style>
             #MainMenu {visibility: hidden;} 
@@ -49,6 +49,7 @@ if not firebase_admin._apps:
         cred = credentials.Certificate("firebase_key.json")
         firebase_admin.initialize_app(cred, {'databaseURL': 'https://eventmapdb-b59f9-default-rtdb.firebaseio.com/'})
 
+# North Bay Etkinlik Koordinatları
 DEFAULT_COORDS = [46.3091, -79.4608]
 
 # --- SIDEBAR: ADMIN PANEL ---
@@ -61,14 +62,19 @@ with st.sidebar:
         st.divider()
         st.subheader("🏢 Add Exhibitor")
         ex_company = st.text_input("Company Name:")
-        ex_code = st.text_input("Vendor Postal Code:", max_chars=7)
+        ex_code = st.text_input("Vendor Postal Code:", max_chars=7) # Firmalar için posta kodu kalsın
         
         if st.button("Drop Exhibitor Pin"):
             clean_ex = re.sub(r'[^A-Z0-9]', '', ex_code.upper())
             if len(clean_ex) >= 3 and ex_company:
                 try:
+                    if len(clean_ex) == 6:
+                        query_ex = f"{clean_ex[:3]} {clean_ex[3:]}"
+                    else:
+                        query_ex = clean_ex
+                        
                     api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
-                    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_ex},+Canada&key={api_key}"
+                    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={query_ex},+Canada&key={api_key}"
                     response = requests.get(url).json()
                     if response['status'] == 'OK':
                         loc = response['results'][0]['geometry']['location']
@@ -133,52 +139,74 @@ with col_m:
     try: st.image("logo.png", use_container_width=True)
     except: pass 
 
-st.markdown("<h1 style='text-align: center;'>📍 What area are you coming in from?</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align: center;'>📍 Where are you joining us from?</h1>", unsafe_allow_html=True)
 
+# YENİ SİSTEM: Posta Kodu Yerine Akıllı Şehir Arama (Büyükşehir Filtreli)
 if not st.session_state.has_submitted:
-    st.markdown("<p style='text-align: center;'>Enter your Canadian postal code to see how far our community reaches:</p>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center;'>Enter your city or borough (e.g., Azilda, Sudbury) to see our reach:</p>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        postal_code_input = st.text_input("Postal Code:", max_chars=7, label_visibility="collapsed", placeholder="e.g., P1B 8G6")
+        city_input = st.text_input("City or Borough:", placeholder="e.g. Azilda", label_visibility="collapsed")
         submit_button = st.button("Submit", use_container_width=True)
 
-    if submit_button and postal_code_input:
-        clean_code = re.sub(r'[^A-Z0-9]', '', postal_code_input.upper())
-        if len(clean_code) >= 3:
+    if submit_button and city_input:
+        query = city_input.strip()
+        if len(query) >= 2:
             try:
                 api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
-                url = f"https://maps.googleapis.com/maps/api/geocode/json?address={clean_code},+Canada&key={api_key}"
-                response = requests.get(url).json()
-                if response['status'] == 'OK':
-                    location = response['results'][0]['geometry']['location']
-                    city_name = clean_code
-                    components = response['results'][0]['address_components']
-                    for comp in components:
-                        if "locality" in comp["types"] or "postal_town" in comp["types"]:
-                            city_name = comp["long_name"]
-                            break
-                    if city_name == clean_code:
+                
+                # ADIM 1: Places API
+                places_url = f"https://maps.googleapis.com/maps/api/place/autocomplete/json?input={query},+ON,+Canada&types=(regions)&key={api_key}"
+                places_response = requests.get(places_url).json()
+
+                if places_response['status'] == 'OK' and places_response['predictions']:
+                    first_prediction = places_response['predictions'][0]
+                    place_id = first_prediction['place_id']
+                    suggested_desc = first_prediction['description']
+                    micro_city = suggested_desc.split(',')[0] 
+
+                    # ADIM 2: Geocoding API
+                    geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?place_id={place_id}&key={api_key}"
+                    geocode_response = requests.get(geocode_url).json()
+
+                    if geocode_response['status'] == 'OK':
+                        result = geocode_response['results'][0]
+                        lat = result['geometry']['location']['lat']
+                        lon = result['geometry']['location']['lng']
+                        components = result['address_components']
+
+                        macro_city = micro_city 
+
+                        # Büyükşehir / Regional Municipality Filtresi
                         for comp in components:
-                            if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
-                                city_name = comp["long_name"]
+                            types = comp['types']
+                            if 'administrative_area_level_3' in types:
+                                macro_city = comp['long_name']
                                 break
-                    db.reference('attendees').push({
-                        "lat": location['lat'], "lon": location['lng'], "city": city_name, "type": "attendee" 
-                    })
-                    st.session_state.new_user_loc = {"lat": location['lat'], "lon": location['lng'], "city": city_name}
-                    st.session_state.has_submitted = True
-                    st.cache_data.clear()
-                    st.rerun() 
+                            elif 'locality' in types and macro_city == micro_city:
+                                macro_city = comp['long_name']
+
+                        # Firebase'e Kaydet
+                        db.reference('attendees').push({
+                            "lat": lat, "lon": lon, "city": macro_city, "micro_city": micro_city, "type": "attendee" 
+                        })
+                        
+                        st.session_state.new_user_loc = {"lat": lat, "lon": lon, "city": macro_city}
+                        st.session_state.has_submitted = True
+                        st.cache_data.clear()
+                        st.rerun() 
+                    else:
+                        st.error("Could not fetch location details. Please try again.")
                 else:
-                    st.error("Postal code not found. Please try again.")
+                    st.error("City not found. Please try typing it differently.")
             except Exception as e:
                 st.error(f"Service error: {e}")
         else:
-            st.error("Please enter a valid code.")
+            st.error("Please enter a valid city or borough name.")
 else:
     st.success("🎉 Thank you! Your location has been added to the map.")
 
-# --- FETCH & RENDER MAP (30 SANİYE KALKAN) ---
+# --- FETCH & RENDER MAP ---
 st.divider()
 
 @st.cache_data(ttl=30)
@@ -197,14 +225,14 @@ for data in data_list:
     if data.get("type") == "exhibitor":
         exhibitors.append(data)
     else:
-        city = data.get("city", "Unknown")
+        city = data.get("city", "Unknown") # Makro şehre göre gruplama yapıyor
         if city not in attendee_summary:
             attendee_summary[city] = {"lat": data.get("lat"), "lon": data.get("lon"), "count": 0}
         attendee_summary[city]["count"] += 1
 
 st.markdown("<p style='text-align: center; font-size: 18px;'><b>Legend:</b> ⭐ Exhibitors &nbsp; | &nbsp; 📍 Attendees</p>", unsafe_allow_html=True)
 
-# Performans ve Görsellik İçin Hafif Harita Altlığı: CartoDB Positron
+# Açık renkli, hızlı yüklenen harita altlığı
 m = folium.Map(location=DEFAULT_COORDS, zoom_start=6, tiles="cartodbpositron")
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
