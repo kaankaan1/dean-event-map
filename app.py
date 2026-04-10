@@ -62,7 +62,7 @@ with st.sidebar:
         st.divider()
         st.subheader("🏢 Add Exhibitor")
         ex_company = st.text_input("Company Name:")
-        ex_code = st.text_input("Vendor Postal Code:", max_chars=7) # Firmalar için posta kodu kalsın
+        ex_code = st.text_input("Vendor Postal Code:", max_chars=7)
         
         if st.button("Drop Exhibitor Pin"):
             clean_ex = re.sub(r'[^A-Z0-9]', '', ex_code.upper())
@@ -141,7 +141,7 @@ with col_m:
 
 st.markdown("<h1 style='text-align: center;'>📍 Where are you joining us from?</h1>", unsafe_allow_html=True)
 
-# YENİ SİSTEM: Posta Kodu Yerine Akıllı Şehir Arama (Büyükşehir Filtreli)
+# YENİ SİSTEM: Akıllı Şehir Arama (Merkeze Hizalama Düzeltmeli)
 if not st.session_state.has_submitted:
     st.markdown("<p style='text-align: center;'>Enter your city or borough (e.g., Azilda, Sudbury) to see our reach:</p>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -177,14 +177,22 @@ if not st.session_state.has_submitted:
 
                         macro_city = micro_city 
 
-                        # Büyükşehir / Regional Municipality Filtresi
+                        # 1. East Ferris Düzeltmesi (Önce locality aranır)
                         for comp in components:
                             types = comp['types']
-                            if 'administrative_area_level_3' in types:
+                            if 'locality' in types:
                                 macro_city = comp['long_name']
                                 break
-                            elif 'locality' in types and macro_city == micro_city:
+                            elif 'administrative_area_level_3' in types and macro_city == micro_city:
                                 macro_city = comp['long_name']
+
+                        # 2. Merkez Koordinat Düzeltmesi
+                        if macro_city != micro_city:
+                            macro_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={macro_city},+ON,+Canada&key={api_key}"
+                            macro_response = requests.get(macro_url).json()
+                            if macro_response['status'] == 'OK':
+                                lat = macro_response['results'][0]['geometry']['location']['lat']
+                                lon = macro_response['results'][0]['geometry']['location']['lng']
 
                         # Firebase'e Kaydet
                         db.reference('attendees').push({
@@ -225,14 +233,13 @@ for data in data_list:
     if data.get("type") == "exhibitor":
         exhibitors.append(data)
     else:
-        city = data.get("city", "Unknown") # Makro şehre göre gruplama yapıyor
+        city = data.get("city", "Unknown")
         if city not in attendee_summary:
             attendee_summary[city] = {"lat": data.get("lat"), "lon": data.get("lon"), "count": 0}
         attendee_summary[city]["count"] += 1
 
 st.markdown("<p style='text-align: center; font-size: 18px;'><b>Legend:</b> ⭐ Exhibitors &nbsp; | &nbsp; 📍 Attendees</p>", unsafe_allow_html=True)
 
-# Açık renkli, hızlı yüklenen harita altlığı
 m = folium.Map(location=DEFAULT_COORDS, zoom_start=6, tiles="cartodbpositron")
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
