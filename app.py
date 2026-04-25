@@ -126,8 +126,13 @@ with st.sidebar:
             csv = df.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Download Data (CSV)", data=csv, file_name='northbay_event_data.csv', mime='text/csv')
             st.divider() 
-            if st.button("🗑️ Wipe All Data"):
-                db.reference('attendees').delete()
+            
+            # YENİ AKILLI SİLME BUTONU
+            if st.button("🗑️ Wipe Attendees (Keep Exhibitors)"):
+                if data_dict_admin:
+                    for key, val in data_dict_admin.items():
+                        if val.get("type") != "exhibitor":
+                            db.reference(f'attendees/{key}').delete()
                 st.cache_data.clear()
                 st.rerun()
         else:
@@ -139,15 +144,16 @@ with col_m:
     try: st.image("logo.png", use_container_width=True)
     except: pass 
 
-st.markdown("<h1 style='text-align: center;'>📍 Where are you joining us from?</h1>", unsafe_allow_html=True)
+# YENİ UI METİNLERİ (Dean'in İsteği)
+st.markdown("<h1 style='text-align: center;'>✨ Light Up The North!</h1>", unsafe_allow_html=True)
+st.markdown("<h3 style='text-align: center; color: #2E5A34; margin-top: -15px;'>Add your town to the live map</h3>", unsafe_allow_html=True)
 
-# YENİ SİSTEM: Akıllı Şehir Arama (Merkeze Hizalama Düzeltmeli)
 if not st.session_state.has_submitted:
-    st.markdown("<p style='text-align: center;'>Enter your city or borough (e.g., Azilda, Sudbury) to see our reach:</p>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        city_input = st.text_input("City or Borough:", placeholder="e.g. Azilda", label_visibility="collapsed")
+        city_input = st.text_input("Enter your town or city:", placeholder="Enter your town or city. e.g. North Bay", label_visibility="collapsed")
         submit_button = st.button("Submit", use_container_width=True)
+        st.markdown("<p style='text-align: center; color: #555; font-size: 16px; margin-top: 10px;'>See how far people have travelled to be here</p>", unsafe_allow_html=True)
 
     if submit_button and city_input:
         query = city_input.strip()
