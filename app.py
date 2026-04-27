@@ -62,40 +62,41 @@ with st.sidebar:
         st.divider()
         st.subheader("🏢 Add Exhibitor")
         ex_company = st.text_input("Company Name:")
-        ex_code = st.text_input("Vendor Postal Code:", max_chars=7)
+        
+        # YENİ SİSTEM: Posta Kodu Yerine Şehir İstiyoruz
+        ex_city = st.text_input("Exhibitor City:")
         
         if st.button("Drop Exhibitor Pin"):
-            clean_ex = re.sub(r'[^A-Z0-9]', '', ex_code.upper())
-            if len(clean_ex) >= 3 and ex_company:
+            query_ex = ex_city.strip()
+            if len(query_ex) >= 2 and ex_company:
                 try:
-                    if len(clean_ex) == 6:
-                        query_ex = f"{clean_ex[:3]} {clean_ex[3:]}"
-                    else:
-                        query_ex = clean_ex
-                        
                     api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
-                    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={query_ex},+Canada&key={api_key}"
+                    # Doğrudan Şehir ismine göre Geocoding API sorgusu
+                    url = f"https://maps.googleapis.com/maps/api/geocode/json?address={query_ex},+ON,+Canada&key={api_key}"
                     response = requests.get(url).json()
+                    
                     if response['status'] == 'OK':
                         loc = response['results'][0]['geometry']['location']
-                        city_n = clean_ex
+                        city_n = query_ex
                         components = response['results'][0]['address_components']
+                        
+                        # Firebase'de temiz durması için Locality (Şehir) ismini yakalıyoruz
                         for comp in components:
                             if "locality" in comp["types"] or "postal_town" in comp["types"]:
                                 city_n = comp["long_name"]
                                 break
-                        if city_n == clean_ex:
-                            for comp in components:
-                                if "administrative_area_level_3" in comp["types"] or "sublocality" in comp["types"] or "neighborhood" in comp["types"]:
-                                    city_n = comp["long_name"]
-                                    break
+                                
                         db.reference('attendees').push({
                             "lat": loc['lat'], "lon": loc['lng'], "city": city_n, "type": "exhibitor", "company": ex_company
                         })
-                        st.success(f"Added {ex_company}!")
+                        st.success(f"Added {ex_company} in {city_n}!")
                         st.rerun()
+                    else:
+                        st.error("City not found. Please try again.")
                 except Exception as e:
                     st.error(f"Error: {e}")
+            else:
+                st.error("Please enter a valid Company Name and City.")
 
         st.divider()
         st.subheader("📊 Data Management")
