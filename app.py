@@ -9,6 +9,7 @@ import json
 import requests
 import random
 import re
+import math
 from streamlit_autorefresh import st_autorefresh
 
 # --- PAGE CONFIGURATION ---
@@ -62,8 +63,6 @@ with st.sidebar:
         st.divider()
         st.subheader("🏢 Add Exhibitor")
         ex_company = st.text_input("Company Name:")
-        
-        # YENİ SİSTEM: Posta Kodu Yerine Şehir İstiyoruz
         ex_city = st.text_input("Exhibitor City:")
         
         if st.button("Drop Exhibitor Pin"):
@@ -71,7 +70,6 @@ with st.sidebar:
             if len(query_ex) >= 2 and ex_company:
                 try:
                     api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
-                    # Doğrudan Şehir ismine göre Geocoding API sorgusu
                     url = f"https://maps.googleapis.com/maps/api/geocode/json?address={query_ex},+ON,+Canada&key={api_key}"
                     response = requests.get(url).json()
                     
@@ -80,7 +78,6 @@ with st.sidebar:
                         city_n = query_ex
                         components = response['results'][0]['address_components']
                         
-                        # Firebase'de temiz durması için Locality (Şehir) ismini yakalıyoruz
                         for comp in components:
                             if "locality" in comp["types"] or "postal_town" in comp["types"]:
                                 city_n = comp["long_name"]
@@ -128,7 +125,6 @@ with st.sidebar:
             st.download_button("📥 Download Data (CSV)", data=csv, file_name='northbay_event_data.csv', mime='text/csv')
             st.divider() 
             
-            # YENİ AKILLI SİLME BUTONU
             if st.button("🗑️ Wipe Attendees (Keep Exhibitors)"):
                 if data_dict_admin:
                     for key, val in data_dict_admin.items():
@@ -145,7 +141,6 @@ with col_m:
     try: st.image("logo.png", use_container_width=True)
     except: pass 
 
-# YENİ UI METİNLERİ (Dean'in İsteği)
 st.markdown("<h1 style='text-align: center;'>✨ Light Up The North!</h1>", unsafe_allow_html=True)
 st.markdown("<h3 style='text-align: center; color: #2E5A34; margin-top: -15px;'>Add your town to the live map</h3>", unsafe_allow_html=True)
 
@@ -162,7 +157,6 @@ if not st.session_state.has_submitted:
             try:
                 api_key = st.secrets["GOOGLE_MAPS_API_KEY"]
                 
-                # ADIM 1: Places API
                 places_url = f"https://maps.googleapis.com/maps/api/place/autocomplete/json?input={query},+ON,+Canada&types=(regions)&key={api_key}"
                 places_response = requests.get(places_url).json()
 
@@ -172,7 +166,6 @@ if not st.session_state.has_submitted:
                     suggested_desc = first_prediction['description']
                     micro_city = suggested_desc.split(',')[0] 
 
-                    # ADIM 2: Geocoding API
                     geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?place_id={place_id}&key={api_key}"
                     geocode_response = requests.get(geocode_url).json()
 
@@ -184,7 +177,6 @@ if not st.session_state.has_submitted:
 
                         macro_city = micro_city 
 
-                        # 1. East Ferris Düzeltmesi (Önce locality aranır)
                         for comp in components:
                             types = comp['types']
                             if 'locality' in types:
@@ -193,7 +185,6 @@ if not st.session_state.has_submitted:
                             elif 'administrative_area_level_3' in types and macro_city == micro_city:
                                 macro_city = comp['long_name']
 
-                        # 2. Merkez Koordinat Düzeltmesi
                         if macro_city != micro_city:
                             macro_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={macro_city},+ON,+Canada&key={api_key}"
                             macro_response = requests.get(macro_url).json()
@@ -201,7 +192,6 @@ if not st.session_state.has_submitted:
                                 lat = macro_response['results'][0]['geometry']['location']['lat']
                                 lon = macro_response['results'][0]['geometry']['location']['lng']
 
-                        # Firebase'e Kaydet
                         db.reference('attendees').push({
                             "lat": lat, "lon": lon, "city": macro_city, "micro_city": micro_city, "type": "attendee" 
                         })
@@ -250,15 +240,36 @@ st.markdown("<p style='text-align: center; font-size: 18px;'><b>Legend:</b> ⭐ 
 m = folium.Map(location=DEFAULT_COORDS, zoom_start=6, tiles="cartodbpositron")
 marker_cluster = MarkerCluster(maxClusterRadius=35).add_to(m)
 
+# YENİ SİSTEM: DOĞADAKİ AYÇİÇEĞİ (FERMAT SARMALI) DİZİLİMİ İLE HOMOJEN DAĞILIM
+exh_by_city = {}
 for ex in exhibitors:
-    comp_name = ex.get("company", "Exhibitor")
-    random.seed(comp_name)
-    jitter_lat = random.uniform(-0.003, 0.003)
-    jitter_lon = random.uniform(-0.003, 0.003)
-    folium.Marker(
-        location=[ex["lat"] + jitter_lat, ex["lon"] + jitter_lon], tooltip=comp_name, icon=folium.Icon(color="red", icon="star", prefix="fa")
-    ).add_to(m)
+    city = ex.get("city", "Unknown")
+    if city not in exh_by_city:
+        exh_by_city[city] = []
+    exh_by_city[city].append(ex)
 
+# Altın Açı (Golden Angle) radyan cinsinden
+GOLDEN_ANGLE = math.pi * (3 - math.sqrt(5))
+
+for city, ex_list in exh_by_city.items():
+    for i, ex in enumerate(ex_list):
+        comp_name = ex.get("company", "Exhibitor")
+        
+        # Merkezdeki mavi ziyaretçi iğnesiyle üst üste binmesin diye i+3 kullanıyoruz
+        # 0.007 değeri iğneler arası genel yayılma mesafesidir. Artırırsan şehir içine daha geniş yayılırlar.
+        radius = 0.007 * math.sqrt(i + 3) 
+        angle = i * GOLDEN_ANGLE
+        
+        offset_lat = radius * math.cos(angle)
+        offset_lon = radius * math.sin(angle) * 1.5 # Harita projeksiyonu için X ekseni telafisi
+        
+        folium.Marker(
+            location=[ex["lat"] + offset_lat, ex["lon"] + offset_lon], 
+            tooltip=comp_name, 
+            icon=folium.Icon(color="red", icon="star", prefix="fa")
+        ).add_to(m)
+
+# Ziyaretçileri çizmeye devam ediyoruz
 for city, info in attendee_summary.items():
     count = info["count"]
     is_newest = False
